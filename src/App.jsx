@@ -89,7 +89,7 @@ function App() {
       const updatedMap = {
         ...prev.complaintsMap,
         [item]: {
-          selected: frequency !== 'Tidak Pernah',
+          selected: true, // Tetap selected agar kotak dan pilihan radio tetap aktif & tidak hilang
           frequency: frequency
         }
       };
@@ -103,24 +103,22 @@ function App() {
       setFormData((prev) => ({
         ...prev,
         complaintsMap: COMPLAINT_LIST.reduce((acc, curr) => {
-          acc[curr] = { selected: false, frequency: 'Tidak Pernah' };
+          acc[curr] = { selected: false, frequency: 'Sering' };
           return acc;
         }, {}),
         hasCustomComplaint: false,
         customComplaintName: '',
-        customComplaintFrequency: 'Tidak Pernah'
+        customComplaintFrequency: 'Sering'
       }));
     }
   };
 
-  // Periksa apakah tidak ada keluhan yang aktif
-  const hasActiveComplaints = useMemo(() => {
-    const fromList = Object.values(formData.complaintsMap).some(
-      (c) => c.selected && c.frequency !== 'Tidak Pernah'
-    );
-    const fromCustom = formData.hasCustomComplaint && formData.customComplaintName.trim() && formData.customComplaintFrequency !== 'Tidak Pernah';
-    return fromList || fromCustom;
-  }, [formData.complaintsMap, formData.hasCustomComplaint, formData.customComplaintName, formData.customComplaintFrequency]);
+  // Periksa apakah opsi "Tidak Ada Keluhan" aktif (hanya aktif jika tidak ada keluhan yang dicentang)
+  const isNoComplaintChecked = useMemo(() => {
+    const hasAnyListChecked = Object.values(formData.complaintsMap).some((c) => c.selected);
+    const hasCustomChecked = formData.hasCustomComplaint && formData.customComplaintName.trim();
+    return !hasAnyListChecked && !hasCustomChecked;
+  }, [formData.complaintsMap, formData.hasCustomComplaint, formData.customComplaintName]);
 
   // Submit Handler: Dilengkapi proteksi concurrency, timeout, dan fallback lokal
   const handleSubmit = async (e) => {
@@ -129,19 +127,18 @@ function App() {
     setIsSubmitting(true);
     setSyncError(null);
 
-    // 1. Kumpulkan daftar keluhan aktif
+    // 1. Kumpulkan daftar keluhan yang dipilih
     const complaintItems = [];
     COMPLAINT_LIST.forEach((name) => {
       const entry = formData.complaintsMap[name];
-      if (entry && entry.selected && entry.frequency !== 'Tidak Pernah') {
+      if (entry && entry.selected) {
         complaintItems.push({ name, frequency: entry.frequency });
       }
     });
 
     if (
       formData.hasCustomComplaint &&
-      formData.customComplaintName.trim() &&
-      formData.customComplaintFrequency !== 'Tidak Pernah'
+      formData.customComplaintName.trim()
     ) {
       complaintItems.push({
         name: formData.customComplaintName.trim(),
@@ -149,8 +146,10 @@ function App() {
       });
     }
 
-    const complaintString = complaintItems.length > 0
-      ? complaintItems.map((c) => `${c.name} (${c.frequency})`).join(', ')
+    // Keluhan aktif yang bermakna klinis (bukan "Tidak Pernah")
+    const activeComplaints = complaintItems.filter((c) => c.frequency !== 'Tidak Pernah');
+    const complaintString = activeComplaints.length > 0
+      ? activeComplaints.map((c) => `${c.name} (${c.frequency})`).join(', ')
       : 'Tidak Ada Keluhan';
 
     const evaluatedData = {
@@ -283,7 +282,7 @@ function App() {
       <header className="bg-white border-b border-slate-200/80 sticky top-0 z-20">
         <div className="max-w-2xl mx-auto px-4 py-3.5 flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
-            <span className="w-8 h-8 rounded-full bg-[#00880C] text-white flex items-center justify-center font-bold text-sm shadow-xs">
+            <span className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
               ATQ
             </span>
             <div>
@@ -327,7 +326,7 @@ function App() {
                       placeholder="Contoh: RM-001"
                       value={formData.patientId}
                       onChange={handleChange}
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none transition"
                     />
                   </div>
 
@@ -345,7 +344,7 @@ function App() {
                       placeholder="Contoh: 24"
                       value={formData.age}
                       onChange={handleChange}
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none transition"
                     />
                   </div>
                 </div>
@@ -374,7 +373,7 @@ function App() {
                       placeholder="Contoh: 155"
                       value={formData.height}
                       onChange={handleChange}
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none transition"
                     />
                   </div>
 
@@ -391,7 +390,7 @@ function App() {
                       placeholder="Contoh: 52"
                       value={formData.weight}
                       onChange={handleChange}
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none transition"
                     />
                   </div>
 
@@ -408,7 +407,7 @@ function App() {
                       placeholder="Normal ≥ 23.5 cm"
                       value={formData.upperArmCircumference}
                       onChange={handleChange}
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none transition"
                     />
                   </div>
 
@@ -424,7 +423,7 @@ function App() {
                       placeholder="Contoh: 80"
                       value={formData.bellyCircumference}
                       onChange={handleChange}
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none transition"
                     />
                   </div>
 
@@ -434,7 +433,7 @@ function App() {
                         <span className="text-slate-500">Perhitungan IMT:</span>
                         <strong className="text-slate-900 font-bold">{liveBMI}</strong>
                       </div>
-                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-[#00880C] font-semibold border border-emerald-100">
+                      <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-200">
                         {liveBMICategory.label}
                       </span>
                     </div>
@@ -464,7 +463,7 @@ function App() {
                       placeholder="Contoh: 110"
                       value={formData.systolic}
                       onChange={handleChange}
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none transition"
                     />
                   </div>
 
@@ -480,7 +479,7 @@ function App() {
                       placeholder="Contoh: 70"
                       value={formData.diastolic}
                       onChange={handleChange}
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none transition"
                     />
                   </div>
                 </div>
@@ -504,9 +503,9 @@ function App() {
                   <label className="flex items-center space-x-2.5 cursor-pointer text-xs font-medium text-slate-800">
                     <input
                       type="checkbox"
-                      checked={!hasActiveComplaints}
+                      checked={isNoComplaintChecked}
                       onChange={(e) => handleSelectNoComplaint(e.target.checked)}
-                      className="w-4 h-4 text-[#00880C] rounded border-slate-300 focus:ring-[#00880C]"
+                      className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
                     />
                     <span>Tidak Ada Keluhan (Kondisi Segar / Sehat)</span>
                   </label>
@@ -520,7 +519,7 @@ function App() {
                       <div
                         key={item}
                         className={`p-3 rounded-xl border transition ${
-                          entry.selected ? 'bg-emerald-50/40 border-emerald-200' : 'border-slate-200/70 hover:bg-slate-50'
+                          entry.selected ? 'bg-blue-50/70 border-blue-300' : 'border-slate-200/70 hover:bg-slate-50'
                         }`}
                       >
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -529,7 +528,7 @@ function App() {
                               type="checkbox"
                               checked={entry.selected}
                               onChange={() => handleToggleComplaint(item)}
-                              className="w-4 h-4 text-[#00880C] rounded border-slate-300 focus:ring-[#00880C]"
+                              className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
                             />
                             <span>{item}</span>
                           </label>
@@ -545,9 +544,9 @@ function App() {
                                     value={freq}
                                     checked={entry.frequency === freq}
                                     onChange={() => handleFrequencyChange(item, freq)}
-                                    className="text-[#00880C] focus:ring-[#00880C]"
+                                    className="text-blue-600 focus:ring-blue-500"
                                   />
-                                  <span className={entry.frequency === freq ? 'font-semibold text-[#00880C]' : 'text-slate-600'}>
+                                  <span className={entry.frequency === freq ? 'font-semibold text-blue-700' : 'text-slate-600'}>
                                     {freq}
                                   </span>
                                 </label>
@@ -562,7 +561,7 @@ function App() {
                   {/* Keluhan Kustom / Tambahan */}
                   <div
                     className={`p-3 rounded-xl border transition ${
-                      formData.hasCustomComplaint ? 'bg-emerald-50/40 border-emerald-200' : 'border-slate-200/70 hover:bg-slate-50'
+                      formData.hasCustomComplaint ? 'bg-blue-50/70 border-blue-300' : 'border-slate-200/70 hover:bg-slate-50'
                     }`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -571,7 +570,7 @@ function App() {
                           type="checkbox"
                           checked={formData.hasCustomComplaint}
                           onChange={(e) => setFormData((prev) => ({ ...prev, hasCustomComplaint: e.target.checked }))}
-                          className="w-4 h-4 text-[#00880C] rounded border-slate-300 focus:ring-[#00880C]"
+                          className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
                         />
                         <span>Keluhan Lainnya...</span>
                       </label>
@@ -587,9 +586,9 @@ function App() {
                                 value={freq}
                                 checked={formData.customComplaintFrequency === freq}
                                 onChange={() => setFormData((prev) => ({ ...prev, customComplaintFrequency: freq }))}
-                                className="text-[#00880C] focus:ring-[#00880C]"
+                                className="text-blue-600 focus:ring-blue-500"
                               />
-                              <span className={formData.customComplaintFrequency === freq ? 'font-semibold text-[#00880C]' : 'text-slate-600'}>
+                              <span className={formData.customComplaintFrequency === freq ? 'font-semibold text-blue-700' : 'text-slate-600'}>
                                 {freq}
                               </span>
                             </label>
@@ -605,7 +604,7 @@ function App() {
                           placeholder="Sebutkan keluhan pasien lainnya..."
                           value={formData.customComplaintName}
                           onChange={(e) => setFormData((prev) => ({ ...prev, customComplaintName: e.target.value }))}
-                          className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-800 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
+                          className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-800 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none transition"
                         />
                       </div>
                     )}
@@ -633,7 +632,7 @@ function App() {
                       required
                       value={formData.childOrder}
                       onChange={handleChange}
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 bg-white focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none transition"
                     >
                       <option value="1">1 (Anak Pertama / Primigravida)</option>
                       <option value="2">2</option>
@@ -653,7 +652,7 @@ function App() {
                       required
                       value={formData.everPregnant}
                       onChange={handleChange}
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 bg-white focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none transition"
                     >
                       <option value="Tidak">Tidak</option>
                       <option value="Ya">Ya</option>
@@ -671,7 +670,7 @@ function App() {
                         required
                         value={formData.previousPregnancyRisk}
                         onChange={handleChange}
-                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 bg-white focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
+                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none transition"
                       >
                         <option value="Risiko rendah">Risiko Rendah / Tanpa Komplikasi</option>
                         <option value="Risiko tinggi">Risiko Tinggi / Riwayat Komplikasi Persalinan</option>
@@ -703,7 +702,7 @@ function App() {
                       placeholder="Supervision of normal pregnancy, unspecified"
                       value={formData.diagnosis}
                       onChange={handleChange}
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none transition"
                     />
                   </div>
 
@@ -718,7 +717,7 @@ function App() {
                       placeholder="TFU sesuai gestasi, letak kepala..."
                       value={formData.palpation}
                       onChange={handleChange}
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none transition"
                     />
                   </div>
                 </div>
@@ -729,7 +728,7 @@ function App() {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full py-3 px-5 rounded-full bg-[#00880C] hover:bg-[#00730A] active:bg-[#006008] text-white font-semibold text-sm transition shadow-sm flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full py-3 px-5 rounded-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-sm transition shadow-sm flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? (
                     <>

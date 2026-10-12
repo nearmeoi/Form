@@ -341,7 +341,7 @@ Dicatat melalui Form Kehamilan`;
               key={idx}
               className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-100 hover:border-slate-200 transition text-xs flex items-start gap-3"
             >
-              <div className="w-6 h-6 rounded-lg bg-emerald-50 text-[#00880C] font-semibold text-xs flex items-center justify-center flex-shrink-0 mt-0.5 border border-emerald-100">
+              <div className="w-6 h-6 rounded-lg bg-blue-50 text-blue-600 font-semibold text-xs flex items-center justify-center flex-shrink-0 mt-0.5 border border-blue-100">
                 {idx + 1}
               </div>
               <div className="flex-1">
@@ -499,7 +499,7 @@ Dicatat melalui Form Kehamilan`;
         <button
           type="button"
           onClick={onReset}
-          className="w-full sm:flex-1 py-3 px-5 rounded-full bg-[#00880C] hover:bg-[#00730A] active:bg-[#006008] text-white font-semibold text-sm transition shadow-sm flex items-center justify-center gap-2"
+          className="w-full sm:flex-1 py-3 px-5 rounded-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-sm transition shadow-sm flex items-center justify-center gap-2"
         >
           <span>+ Input Pasien Berikutnya</span>
         </button>
