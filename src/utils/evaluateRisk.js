@@ -7,24 +7,13 @@
  * 2. IMT (Indeks Massa Tubuh: Kurus < 18.5, Lebih 25-29.9, Obesitas >= 30)
  * 3. Tekanan Darah (Hipertensi >=140/90, Prehipertensi, Hipotensi <90/60)
  * 4. LILA (Lingkar Lengan Atas < 23.5 cm -> Kekurangan Energi Kronis / KEK)
- * 5. Keluhan Aktif (Multi-pilihan: Mual, Mual-Muntah, Sakit Kepala, Nyeri Perut Bawah, Pusing, Nyeri Ulu Hati, dll.)
+ * 5. Keluhan dengan Frekuensi:
+ *    - "Sering" / "Ya": Bobot penuh
+ *    - "Jarang": Bobot 50%
+ *    - "Tidak Pernah": 0
  * 6. Riwayat Kehamilan Berisiko Tinggi (Jika Pernah Hamil = Ya)
  * 7. Paritas / Anak ke-berapa (Grande Multipara > 4, Multipara Tinggi = 4)
  */
-
-export function calculateAge(birthDateString) {
-  if (!birthDateString) return null;
-  const today = new Date();
-  const birthDate = new Date(birthDateString);
-  if (isNaN(birthDate.getTime())) return null;
-
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const m = today.getMonth() - birthDate.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-    age--;
-  }
-  return age >= 0 ? age : null;
-}
 
 export function calculateBMI(heightCm, weightKg) {
   const h = parseFloat(heightCm);
@@ -49,21 +38,15 @@ export function evaluateRisk(formData) {
   const flags = [];
   const clinicalNotes = [];
 
-  // Parse input
   const age = formData.age !== '' && formData.age !== null 
     ? parseInt(formData.age, 10) 
-    : calculateAge(formData.birthDate);
+    : null;
 
   const bmi = calculateBMI(formData.height, formData.weight);
   const systolic = parseFloat(formData.systolic);
   const diastolic = parseFloat(formData.diastolic);
   const lila = parseFloat(formData.upperArmCircumference);
   const childOrder = formData.childOrder;
-
-  // Mendukung keluhan berupa Array (multi-select) maupun string tunggal
-  const complaints = Array.isArray(formData.complaints)
-    ? formData.complaints
-    : (formData.complaint ? [formData.complaint] : []);
 
   // Rule 1: Usia Ibu
   if (age !== null && !isNaN(age)) {
@@ -83,7 +66,7 @@ export function evaluateRisk(formData) {
     if (bmi < 18.5) {
       score += 1;
       flags.push(`Kurus (IMT: ${bmi})`);
-      tips.push(`Status gizi tergolong Kurus (IMT: ${bmi}). Tingkatkan asupan kalori dan protein seimbang, serta konsultasikan menu makanan dengan ahli gizi puskesmas.`);
+      tips.push(`Status gizi tergolong Kurus (IMT: ${bmi}). Tingkatkan asupan kalori dan protein seimbang, serta konsultasikan menu makanan dengan ahli gizi.`);
     } else if (bmi >= 25.0 && bmi < 30.0) {
       score += 1;
       flags.push(`Kelebihan BB (IMT: ${bmi})`);
@@ -121,39 +104,52 @@ export function evaluateRisk(formData) {
     }
   }
 
-  // Rule 5: Keluhan Aktif (Dapat memilih lebih dari satu)
-  const isTidakAda = complaints.length === 0 || (complaints.length === 1 && complaints[0] === 'Tidak Ada');
-  
-  if (!isTidakAda) {
-    complaints.forEach((c) => {
-      if (c === 'Mual-Muntah') {
-        score += 1;
-        flags.push('Keluhan Mual-Muntah Aktif');
-        tips.push('Mual & muntah: Makan porsi kecil namun sering (5–6 kali sehari). Hindari makanan berlemak/berbau tajam. Jika muntah >5 kali/hari, segera ke faskes.');
-      } else if (c === 'Mual') {
-        score += 0.5;
-        tips.push('Mual: Konsumsi biskuit kering sebelum bangun dari tempat tidur dan minum air hangat.');
-      } else if (c === 'Sakit Kepala') {
-        score += 1;
-        flags.push('Keluhan Sakit Kepala');
-        tips.push('Sakit kepala: Waspadai gejala penyerta pre-eklampsia. Pastikan tekanan darah terkontrol dan istirahat cukup.');
-      } else if (c === 'Nyeri Perut Bawah') {
-        score += 1;
-        flags.push('Keluhan Nyeri Perut Bawah');
-        tips.push('Nyeri perut bawah: Istirahat tirah baring (bedrest). Jika disertai flek darah atau kram hebat, segera ke faskes.');
-      } else if (c === 'Nyeri Ulu Hati') {
-        score += 0.5;
-        tips.push('Nyeri ulu hati: Hindari makanan asam/pedas dan jangan langsung berbaring setelah makan.');
-      } else if (c === 'Pusing') {
-        score += 1;
-        flags.push('Keluhan Pusing');
-        tips.push('Pusing: Cukupi konsumsi zat besi/tablet tambah darah dan hindari perubahan posisi tubuh secara mendadak.');
-      } else if (c !== 'Tidak Ada') {
-        // Keluhan kustom / lainnya
-        tips.push(`Keluhan (${c}): Konsultasikan perkembangan keluhan ini saat kontrol dengan bidan/dokter.`);
-      }
-    });
-  }
+  // Rule 5: Keluhan dengan Tingkat Frekuensi (Sering, Jarang, Tidak Pernah)
+  // Format complaintItems: [{ name: 'Mual', frequency: 'Sering' | 'Jarang' | 'Tidak Pernah' }]
+  const complaintItems = Array.isArray(formData.complaintItems) ? formData.complaintItems : [];
+
+  complaintItems.forEach((item) => {
+    const { name, frequency } = item;
+    if (!frequency || frequency === 'Tidak Pernah') return;
+
+    // Multiplier bobot: Sering = 1 (100%), Jarang = 0.5 (50%)
+    const multiplier = frequency === 'Sering' ? 1 : 0.5;
+    const freqLabel = frequency === 'Sering' ? 'Sering' : 'Jarang';
+
+    if (name === 'Mual-Muntah') {
+      const addedScore = 1 * multiplier;
+      score += addedScore;
+      flags.push(`Mual-Muntah (${freqLabel})`);
+      tips.push(`Mual & muntah (${freqLabel}): Makan porsi kecil namun sering (5–6 kali sehari). Hindari makanan berlemak/berbau tajam. Jika muntah berulang (>5 kali/hari) atau lemas, segera ke fasilitas kesehatan.`);
+    } else if (name === 'Mual') {
+      const addedScore = 0.5 * multiplier;
+      score += addedScore;
+      tips.push(`Mual (${freqLabel}): Konsumsi biskuit kering sebelum bangun dari tempat tidur dan minum air hangat sedikit-sedikit.`);
+    } else if (name === 'Sakit Kepala') {
+      const addedScore = 1 * multiplier;
+      score += addedScore;
+      flags.push(`Sakit Kepala (${freqLabel})`);
+      tips.push(`Sakit kepala (${freqLabel}): Waspadai gejala penyerta pre-eklampsia. Pastikan tekanan darah terkontrol dan istirahat cukup.`);
+    } else if (name === 'Nyeri Perut Bawah') {
+      const addedScore = 1 * multiplier;
+      score += addedScore;
+      flags.push(`Nyeri Perut Bawah (${freqLabel})`);
+      tips.push(`Nyeri perut bawah (${freqLabel}): Istirahat tirah baring (bedrest). Jika disertai flek darah atau kram hebat, segera ke faskes.`);
+    } else if (name === 'Nyeri Ulu Hati') {
+      const addedScore = 0.5 * multiplier;
+      score += addedScore;
+      tips.push(`Nyeri ulu hati (${freqLabel}): Hindari makanan asam/pedas dan jangan langsung berbaring setelah makan.`);
+    } else if (name === 'Pusing') {
+      const addedScore = 1 * multiplier;
+      score += addedScore;
+      flags.push(`Pusing (${freqLabel})`);
+      tips.push(`Pusing (${freqLabel}): Cukupi konsumsi zat besi/tablet tambah darah dan hindari perubahan posisi tubuh secara mendadak.`);
+    } else {
+      // Keluhan lainnya
+      if (frequency === 'Sering') score += 0.5;
+      tips.push(`Keluhan ${name} (${freqLabel}): Konsultasikan perkembangan keluhan ini saat kontrol dengan bidan/dokter.`);
+    }
+  });
 
   // Rule 6: Riwayat Kehamilan Sebelumnya
   if (formData.everPregnant === 'Ya') {
@@ -179,7 +175,7 @@ export function evaluateRisk(formData) {
     clinicalNotes.push('Kehamilan anak pertama: Bekali ibu dengan pengetahuan tanda awal persalinan dan perawatan nifas.');
   }
 
-  // Kesimpulan Level Risiko (Forward Chaining)
+  // Level Risiko Final (Forward Chaining)
   let level = 'rendah';
   let title = '';
   let message = '';
@@ -203,8 +199,14 @@ export function evaluateRisk(formData) {
     tips.push('Lanjutkan konsumsi tablet tambah darah / vitamin asam folat dan jadwalkan kontrol ANC sesuai usia kandungan.');
   }
 
+  // Siapkan teks ringkasan keluhan
+  const activeComplaintsText = complaintItems
+    .filter(c => c.frequency && c.frequency !== 'Tidak Pernah')
+    .map(c => `${c.name} (${c.frequency})`)
+    .join(', ');
+
   return {
-    score,
+    score: parseFloat(score.toFixed(1)),
     level,
     title,
     message,
@@ -213,16 +215,13 @@ export function evaluateRisk(formData) {
     clinicalNotes,
     patientData: {
       patientId: formData.patientId,
-      name: formData.name,
-      nik: formData.nik,
       age: age,
       bmi: bmi,
       bmiCategory: getBMICategory(bmi),
       bloodPressure: (systolic && diastolic) ? `${systolic}/${diastolic} mmHg` : '-',
       upperArmCircumference: lila ? `${lila} cm` : '-',
       bellyCircumference: formData.bellyCircumference ? `${formData.bellyCircumference} cm` : '-',
-      complaints: complaints.length > 0 ? complaints : ['Tidak Ada'],
-      complaintText: complaints.join(', ') || 'Tidak Ada',
+      complaintText: activeComplaintsText || 'Tidak Ada Keluhan',
       everPregnant: formData.everPregnant,
       childOrder: formData.childOrder
     }

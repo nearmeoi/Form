@@ -136,12 +136,8 @@ export default function ResultScreen({ evaluationResult, onReset }) {
               {showDetails && (
                 <div className="p-4 grid grid-cols-2 sm:grid-cols-3 gap-3 bg-white text-xs">
                   <div>
-                    <span className="text-slate-400 block">ID / Nama:</span>
-                    <strong className="text-slate-800">{patientData.patientId || '-'} / {patientData.name || '-'}</strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block">NIK:</span>
-                    <span className="text-slate-800 font-mono">{patientData.nik || '-'}</span>
+                    <span className="text-slate-400 block">No. Register / ID:</span>
+                    <strong className="text-slate-800">{patientData.patientId || '-'}</strong>
                   </div>
                   <div>
                     <span className="text-slate-400 block">Umur:</span>

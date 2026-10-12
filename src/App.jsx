@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
 import ResultScreen from './components/ResultScreen';
-import { evaluateRisk, calculateAge, calculateBMI, getBMICategory } from './utils/evaluateRisk';
+import { evaluateRisk, calculateBMI, getBMICategory } from './utils/evaluateRisk';
 
-const COMPLAINT_OPTIONS = [
+const COMPLAINT_LIST = [
   'Mual',
   'Mual-Muntah',
   'Pusing',
@@ -15,9 +15,6 @@ const COMPLAINT_OPTIONS = [
 
 const INITIAL_FORM_STATE = {
   patientId: '',
-  name: '',
-  nik: '',
-  birthDate: '',
   age: '',
   height: '',
   weight: '',
@@ -25,9 +22,14 @@ const INITIAL_FORM_STATE = {
   bellyCircumference: '',
   systolic: '',
   diastolic: '',
-  complaints: [],
+  // Simpan status setiap keluhan: { [namaKeluhan]: { selected: boolean, frequency: 'Sering' | 'Jarang' | 'Tidak Pernah' } }
+  complaintsMap: COMPLAINT_LIST.reduce((acc, curr) => {
+    acc[curr] = { selected: false, frequency: 'Sering' };
+    return acc;
+  }, {}),
   hasCustomComplaint: false,
-  customComplaint: '',
+  customComplaintName: '',
+  customComplaintFrequency: 'Sering',
   childOrder: '1',
   everPregnant: 'Tidak',
   previousPregnancyRisk: 'Risiko rendah',
@@ -42,14 +44,6 @@ function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState('idle');
 
-  // Hitung umur otomatis dari tanggal lahir jika diisi
-  const computedAge = useMemo(() => {
-    if (formData.birthDate) {
-      return calculateAge(formData.birthDate);
-    }
-    return formData.age ? parseInt(formData.age, 10) : '';
-  }, [formData.birthDate, formData.age]);
-
   // Live BMI calculation
   const liveBMI = useMemo(() => {
     return calculateBMI(formData.height, formData.weight);
@@ -61,62 +55,97 @@ function App() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // Toggle checklist keluhan
+  const handleToggleComplaint = (item) => {
     setFormData((prev) => {
-      const updated = { ...prev, [name]: value };
-      if (name === 'birthDate') {
-        const calculated = calculateAge(value);
-        if (calculated !== null) {
-          updated.age = calculated.toString();
+      const current = prev.complaintsMap[item] || { selected: false, frequency: 'Sering' };
+      const updatedMap = {
+        ...prev.complaintsMap,
+        [item]: {
+          ...current,
+          selected: !current.selected,
+          // Default jika baru dicentang
+          frequency: !current.selected ? (current.frequency || 'Sering') : current.frequency
         }
-      }
-      return updated;
+      };
+      return { ...prev, complaintsMap: updatedMap };
     });
   };
 
-  // Toggle checkbox biasa untuk keluhan
-  const handleComplaintCheckbox = (item) => {
+  // Ubah frekuensi keluhan (Sering, Jarang, Tidak Pernah)
+  const handleFrequencyChange = (item, frequency) => {
     setFormData((prev) => {
-      const exists = prev.complaints.includes(item);
-      const nextComplaints = exists
-        ? prev.complaints.filter((c) => c !== item)
-        : [...prev.complaints, item];
-      return { ...prev, complaints: nextComplaints };
+      const updatedMap = {
+        ...prev.complaintsMap,
+        [item]: {
+          selected: frequency !== 'Tidak Pernah',
+          frequency: frequency
+        }
+      };
+      return { ...prev, complaintsMap: updatedMap };
     });
   };
 
+  // Reset keluhan jika memilih "Tidak Ada Keluhan"
   const handleSelectNoComplaint = (checked) => {
     if (checked) {
       setFormData((prev) => ({
         ...prev,
-        complaints: [],
+        complaintsMap: COMPLAINT_LIST.reduce((acc, curr) => {
+          acc[curr] = { selected: false, frequency: 'Tidak Pernah' };
+          return acc;
+        }, {}),
         hasCustomComplaint: false,
-        customComplaint: ''
+        customComplaintName: '',
+        customComplaintFrequency: 'Tidak Pernah'
       }));
     }
   };
 
-  const isNoComplaintChecked = formData.complaints.length === 0 && !formData.hasCustomComplaint;
+  // Periksa apakah tidak ada keluhan yang aktif
+  const hasActiveComplaints = useMemo(() => {
+    const fromList = Object.values(formData.complaintsMap).some(
+      (c) => c.selected && c.frequency !== 'Tidak Pernah'
+    );
+    const fromCustom = formData.hasCustomComplaint && formData.customComplaintName.trim() && formData.customComplaintFrequency !== 'Tidak Pernah';
+    return fromList || fromCustom;
+  }, [formData.complaintsMap, formData.hasCustomComplaint, formData.customComplaintName, formData.customComplaintFrequency]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
     setSubmitStatus('idle');
 
-    let allComplaints = [...formData.complaints];
-    if (formData.hasCustomComplaint && formData.customComplaint.trim()) {
-      allComplaints.push(formData.customComplaint.trim());
-    }
-    if (allComplaints.length === 0) {
-      allComplaints = ['Tidak Ada'];
+    // Kumpulkan keluhan beserta frekuensinya
+    const complaintItems = [];
+    COMPLAINT_LIST.forEach((name) => {
+      const entry = formData.complaintsMap[name];
+      if (entry && entry.selected && entry.frequency !== 'Tidak Pernah') {
+        complaintItems.push({ name, frequency: entry.frequency });
+      }
+    });
+
+    if (
+      formData.hasCustomComplaint &&
+      formData.customComplaintName.trim() &&
+      formData.customComplaintFrequency !== 'Tidak Pernah'
+    ) {
+      complaintItems.push({
+        name: formData.customComplaintName.trim(),
+        frequency: formData.customComplaintFrequency
+      });
     }
 
-    const complaintString = allComplaints.join(', ');
-    const finalAge = formData.age || (computedAge !== '' ? computedAge.toString() : '');
+    const complaintString = complaintItems.length > 0
+      ? complaintItems.map((c) => `${c.name} (${c.frequency})`).join(', ')
+      : 'Tidak Ada Keluhan';
 
     const evaluatedData = {
       ...formData,
-      age: finalAge,
-      complaints: allComplaints,
+      complaintItems: complaintItems,
       complaint: complaintString,
       bmi: liveBMI,
       bmiCategory: liveBMICategory.label
@@ -128,9 +157,6 @@ function App() {
       if (url) {
         const payload = new URLSearchParams({
           id_pasien: evaluatedData.patientId,
-          nama_pasien: evaluatedData.name,
-          nik: evaluatedData.nik,
-          tgl_lahir: evaluatedData.birthDate,
           umur: evaluatedData.age,
           keluhan_utama: complaintString,
           tinggi_badan: evaluatedData.height,
@@ -188,7 +214,7 @@ function App() {
             <span className="text-xl">📋</span>
             <h1 className="text-lg font-bold text-gray-900 tracking-tight">KlinikApp Maternal</h1>
           </div>
-          <span className="text-xs text-gray-500">Puskesmas / Pelayanan ANC</span>
+          <span className="text-xs text-gray-500">Form Skrining Kehamilan</span>
         </div>
       </header>
 
@@ -198,17 +224,17 @@ function App() {
           <div className="max-w-3xl mx-auto bg-white rounded-lg border border-gray-300 shadow-sm overflow-hidden">
             {/* Header Form */}
             <div className="border-b border-gray-200 px-6 py-5 bg-white">
-              <h2 className="text-xl font-bold text-gray-900">Formulir Skrining Ibu Hamil</h2>
+              <h2 className="text-xl font-bold text-gray-900">Formulir Skrining Kesehatan Ibu Hamil</h2>
               <p className="text-sm text-gray-600 mt-1">
-                Lengkapi formulir pemeriksaan di bawah ini untuk mencatat data pasien dan mengevaluasi tingkat risiko kehamilan.
+                Lengkapi informasi pemeriksaan di bawah ini untuk mencatat data dan melihat evaluasi risiko kehamilan.
               </p>
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-6">
-              {/* BAGIAN 1: IDENTITAS PASIEN */}
+              {/* BAGIAN 1: INFORMASI PASIEN */}
               <fieldset className="border border-gray-200 rounded-md p-4">
                 <legend className="px-2 text-sm font-bold text-gray-800">
-                  1. Identitas Pasien
+                  1. Informasi Pasien
                 </legend>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
                   <div>
@@ -228,71 +254,21 @@ function App() {
                   </div>
 
                   <div>
-                    <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-                      Nama Pasien <span className="text-red-500">*</span>
+                    <label htmlFor="age" className="block text-sm font-medium text-gray-700 mb-1">
+                      Umur Pasien (Tahun) <span className="text-red-500">*</span>
                     </label>
                     <input
-                      type="text"
-                      id="name"
-                      name="name"
+                      type="number"
+                      id="age"
+                      name="age"
+                      min="10"
+                      max="70"
                       required
-                      placeholder="Nama lengkap pasien"
-                      value={formData.name}
+                      placeholder="Contoh: 24"
+                      value={formData.age}
                       onChange={handleChange}
                       className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
                     />
-                  </div>
-
-                  <div>
-                    <label htmlFor="nik" className="block text-sm font-medium text-gray-700 mb-1">
-                      NIK (16 Digit) <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      id="nik"
-                      name="nik"
-                      required
-                      maxLength={16}
-                      pattern="[0-9]{16}"
-                      title="NIK harus 16 digit angka"
-                      placeholder="7309xxxxxxxxxxxx"
-                      value={formData.nik}
-                      onChange={handleChange}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label htmlFor="birthDate" className="block text-sm font-medium text-gray-700 mb-1">
-                        Tanggal Lahir
-                      </label>
-                      <input
-                        type="date"
-                        id="birthDate"
-                        name="birthDate"
-                        value={formData.birthDate}
-                        onChange={handleChange}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="age" className="block text-sm font-medium text-gray-700 mb-1">
-                        Umur (Tahun) <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        id="age"
-                        name="age"
-                        min="10"
-                        max="70"
-                        required
-                        placeholder="Contoh: 24"
-                        value={formData.age}
-                        onChange={handleChange}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
-                      />
-                    </div>
                   </div>
                 </div>
               </fieldset>
@@ -370,7 +346,6 @@ function App() {
                     />
                   </div>
 
-                  {/* Info Ringkas IMT Otomatis */}
                   {liveBMI && (
                     <div className="md:col-span-2 bg-blue-50 border border-blue-200 rounded p-2.5 text-xs text-blue-900 flex items-center justify-between">
                       <span>Perhitungan IMT Otomatis: <strong>{liveBMI}</strong></span>
@@ -420,77 +395,130 @@ function App() {
                 </div>
               </fieldset>
 
-              {/* BAGIAN 4: KELUHAN PASIEN (CHECKBOX BIASA) */}
+              {/* BAGIAN 4: KELUHAN PASIEN (DENGAN TINGKAT FREKUENSI) */}
               <fieldset className="border border-gray-200 rounded-md p-4">
                 <legend className="px-2 text-sm font-bold text-gray-800">
                   4. Keluhan Pasien
                 </legend>
                 <div className="space-y-3 mt-2">
                   <p className="text-xs text-gray-600">
-                    Pilih keluhan yang dirasakan oleh ibu hamil (bisa pilih lebih dari satu):
+                    Centang keluhan yang dialami, lalu tentukan frekuensi kemunculannya (<strong>Sering</strong>, <strong>Jarang</strong>, atau <strong>Tidak Pernah</strong>):
                   </p>
 
-                  {/* Checkbox: Tidak Ada Keluhan */}
+                  {/* Opsi: Tidak Ada Keluhan */}
                   <div className="p-2.5 bg-gray-50 border border-gray-200 rounded">
                     <label className="flex items-center space-x-2.5 cursor-pointer text-sm font-medium text-gray-800">
                       <input
                         type="checkbox"
-                        checked={isNoComplaintChecked}
+                        checked={!hasActiveComplaints}
                         onChange={(e) => handleSelectNoComplaint(e.target.checked)}
                         className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                       />
-                      <span>Tidak Ada Keluhan</span>
+                      <span>Tidak Ada Keluhan (Kondisi Sehat / Normal)</span>
                     </label>
                   </div>
 
-                  {/* Grid Checkbox Standar */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                    {COMPLAINT_OPTIONS.map((item) => {
-                      const isChecked = formData.complaints.includes(item);
+                  {/* Daftar Keluhan dengan Pilihan Frekuensi */}
+                  <div className="space-y-2 pt-1">
+                    {COMPLAINT_LIST.map((item) => {
+                      const entry = formData.complaintsMap[item] || { selected: false, frequency: 'Sering' };
                       return (
-                        <label
+                        <div
                           key={item}
-                          className="flex items-center space-x-2.5 p-2 rounded border border-gray-200 hover:bg-gray-50 cursor-pointer text-sm text-gray-800"
+                          className={`p-2.5 rounded border transition ${
+                            entry.selected ? 'bg-blue-50/50 border-blue-300' : 'border-gray-200 hover:bg-gray-50'
+                          }`}
                         >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => handleComplaintCheckbox(item)}
-                            className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                          />
-                          <span>{item}</span>
-                        </label>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            {/* Checkbox Nama Keluhan */}
+                            <label className="flex items-center space-x-2.5 cursor-pointer text-sm font-medium text-gray-800">
+                              <input
+                                type="checkbox"
+                                checked={entry.selected}
+                                onChange={() => handleToggleComplaint(item)}
+                                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                              />
+                              <span>{item}</span>
+                            </label>
+
+                            {/* Opsi Frekuensi (Muncul saat dicentang) */}
+                            {entry.selected && (
+                              <div className="flex items-center space-x-3 pl-6 sm:pl-0 text-xs">
+                                <span className="text-gray-500 font-medium">Frekuensi:</span>
+                                {['Sering', 'Jarang', 'Tidak Pernah'].map((freq) => (
+                                  <label key={freq} className="inline-flex items-center space-x-1 cursor-pointer">
+                                    <input
+                                      type="radio"
+                                      name={`freq-${item}`}
+                                      value={freq}
+                                      checked={entry.frequency === freq}
+                                      onChange={() => handleFrequencyChange(item, freq)}
+                                      className="text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className={entry.frequency === freq ? 'font-semibold text-blue-700' : 'text-gray-600'}>
+                                      {freq}
+                                    </span>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       );
                     })}
 
-                    {/* Checkbox Keluhan Lainnya */}
-                    <label className="flex items-center space-x-2.5 p-2 rounded border border-gray-200 hover:bg-gray-50 cursor-pointer text-sm text-gray-800">
-                      <input
-                        type="checkbox"
-                        checked={formData.hasCustomComplaint}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, hasCustomComplaint: e.target.checked }))}
-                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                      />
-                      <span>Lainnya</span>
-                    </label>
-                  </div>
+                    {/* Keluhan Tambahan / Lainnya */}
+                    <div
+                      className={`p-2.5 rounded border transition ${
+                        formData.hasCustomComplaint ? 'bg-blue-50/50 border-blue-300' : 'border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <label className="flex items-center space-x-2.5 cursor-pointer text-sm font-medium text-gray-800">
+                          <input
+                            type="checkbox"
+                            checked={formData.hasCustomComplaint}
+                            onChange={(e) => setFormData((prev) => ({ ...prev, hasCustomComplaint: e.target.checked }))}
+                            className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                          />
+                          <span>Keluhan Lainnya...</span>
+                        </label>
 
-                  {/* Input Teks Jika Keluhan Lainnya Dicetang */}
-                  {formData.hasCustomComplaint && (
-                    <div className="pt-1">
-                      <label htmlFor="customComplaint" className="block text-xs text-gray-600 mb-1">
-                        Sebutkan keluhan lainnya:
-                      </label>
-                      <input
-                        type="text"
-                        id="customComplaint"
-                        placeholder="Contoh: Nyeri pinggang, sesak napas..."
-                        value={formData.customComplaint}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, customComplaint: e.target.value }))}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
-                      />
+                        {formData.hasCustomComplaint && (
+                          <div className="flex items-center space-x-3 pl-6 sm:pl-0 text-xs">
+                            <span className="text-gray-500 font-medium">Frekuensi:</span>
+                            {['Sering', 'Jarang', 'Tidak Pernah'].map((freq) => (
+                              <label key={freq} className="inline-flex items-center space-x-1 cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name="freq-custom"
+                                  value={freq}
+                                  checked={formData.customComplaintFrequency === freq}
+                                  onChange={() => setFormData((prev) => ({ ...prev, customComplaintFrequency: freq }))}
+                                  className="text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className={formData.customComplaintFrequency === freq ? 'font-semibold text-blue-700' : 'text-gray-600'}>
+                                  {freq}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {formData.hasCustomComplaint && (
+                        <div className="mt-2.5 pl-6">
+                          <input
+                            type="text"
+                            placeholder="Sebutkan keluhan pasien lainnya..."
+                            value={formData.customComplaintName}
+                            onChange={(e) => setFormData((prev) => ({ ...prev, customComplaintName: e.target.value }))}
+                            className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-xs focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                          />
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
               </fieldset>
 
@@ -609,7 +637,7 @@ function App() {
 
                 {submitStatus === 'error' && (
                   <p className="text-xs text-red-600 text-center mt-2">
-                    Gagal mengirim ke spreadsheet. Namun data tetap dapat dievaluasi.
+                    Gagal mengirim ke spreadsheet. Namun data tetap dapat dievaluasi secara lokal.
                   </p>
                 )}
               </div>
