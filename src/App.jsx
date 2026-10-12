@@ -175,12 +175,25 @@ function App() {
     };
     saveToLocalQueue(localRecord);
 
+    // Hitung estimasi partum (jumlah riwayat persalinan sebelumnya)
+    let calculatedPartum = '0';
+    if (evaluatedData.everPregnant === 'Ya') {
+      const childNum = parseInt(evaluatedData.childOrder, 10);
+      if (!isNaN(childNum) && childNum > 1) {
+        calculatedPartum = String(childNum - 1);
+      } else if (evaluatedData.childOrder === '>4') {
+        calculatedPartum = '>3';
+      }
+    }
+
     // 4. Siapkan payload data untuk Google Spreadsheet
     const payload = {
       ref_id: generatedRefId,
       id_pasien: evaluatedData.patientId,
       umur: evaluatedData.age,
+      keluhan: complaintString,
       keluhan_utama: complaintString,
+      diagnosa: evaluatedData.diagnosis,
       tinggi_badan: evaluatedData.height,
       berat_badan: evaluatedData.weight,
       lingkar_perut: evaluatedData.bellyCircumference,
@@ -191,10 +204,10 @@ function App() {
       tekanan_darah: `${evaluatedData.systolic}/${evaluatedData.diastolic}`,
       lila: evaluatedData.upperArmCircumference,
       anak_ke: evaluatedData.childOrder,
+      partum: calculatedPartum,
       pernah_hamil: evaluatedData.everPregnant,
       kehamilan_sebelum: evaluatedData.everPregnant === 'Ya' ? evaluatedData.previousPregnancyRisk : '-',
       palpasi: evaluatedData.palpation,
-      diagnosa: evaluatedData.diagnosis,
       skor_risiko: evaluation.score.toString(),
       level_risiko: evaluation.level,
       kesimpulan: evaluation.title
