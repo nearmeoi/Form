@@ -19,24 +19,24 @@ const INITIAL_FORM_STATE = {
   nik: '',
   birthDate: '',
   age: '',
-  complaints: [], // Array multi-select
-  hasCustomComplaint: false,
-  customComplaint: '',
   height: '',
   weight: '',
+  upperArmCircumference: '',
   bellyCircumference: '',
   systolic: '',
   diastolic: '',
-  upperArmCircumference: '',
+  complaints: [],
+  hasCustomComplaint: false,
+  customComplaint: '',
   childOrder: '1',
   everPregnant: 'Tidak',
   previousPregnancyRisk: 'Risiko rendah',
-  palpation: '',
-  diagnosis: 'Supervision of normal pregnancy, unspecified'
+  diagnosis: 'Supervision of normal pregnancy, unspecified',
+  palpation: ''
 };
 
 function App() {
-  const [view, setView] = useState('form'); // 'form' | 'result'
+  const [view, setView] = useState('form');
   const [evaluationResult, setEvaluationResult] = useState(null);
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -63,7 +63,6 @@ function App() {
     const { name, value } = e.target;
     setFormData((prev) => {
       const updated = { ...prev, [name]: value };
-      // Sinkronkan umur jika tanggal lahir diubah
       if (name === 'birthDate') {
         const calculated = calculateAge(value);
         if (calculated !== null) {
@@ -74,8 +73,8 @@ function App() {
     });
   };
 
-  // Handler toggle keluhan (Checkbox / Multi-Select)
-  const handleComplaintToggle = (item) => {
+  // Toggle checkbox biasa untuk keluhan
+  const handleComplaintCheckbox = (item) => {
     setFormData((prev) => {
       const exists = prev.complaints.includes(item);
       const nextComplaints = exists
@@ -85,21 +84,24 @@ function App() {
     });
   };
 
-  const handleSelectNoComplaint = () => {
-    setFormData((prev) => ({
-      ...prev,
-      complaints: [],
-      hasCustomComplaint: false,
-      customComplaint: ''
-    }));
+  const handleSelectNoComplaint = (checked) => {
+    if (checked) {
+      setFormData((prev) => ({
+        ...prev,
+        complaints: [],
+        hasCustomComplaint: false,
+        customComplaint: ''
+      }));
+    }
   };
+
+  const isNoComplaintChecked = formData.complaints.length === 0 && !formData.hasCustomComplaint;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
     setSubmitStatus('idle');
 
-    // Kumpulkan seluruh keluhan yang dipilih
     let allComplaints = [...formData.complaints];
     if (formData.hasCustomComplaint && formData.customComplaint.trim()) {
       allComplaints.push(formData.customComplaint.trim());
@@ -177,79 +179,73 @@ function App() {
     setView('form');
   };
 
-  const isNoComplaintActive = formData.complaints.length === 0 && !formData.hasCustomComplaint;
-
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-30 shadow-sm">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <span className="text-2xl">🩺</span>
-            <div>
-              <h1 className="text-white text-lg sm:text-xl font-bold tracking-tight">KlinikApp Maternal Expert</h1>
-              <p className="text-xs text-slate-400">Sistem Skrining Risiko Kesehatan Ibu Hamil</p>
-            </div>
+    <div className="min-h-screen bg-gray-100 flex flex-col font-sans">
+      {/* Header Bar */}
+      <header className="bg-white border-b border-gray-200">
+        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <span className="text-xl">📋</span>
+            <h1 className="text-lg font-bold text-gray-900 tracking-tight">KlinikApp Maternal</h1>
           </div>
-          <span className="text-xs bg-emerald-500/20 text-emerald-300 font-medium px-2.5 py-1 rounded-full border border-emerald-500/30">
-            Log Book Integration
-          </span>
+          <span className="text-xs text-gray-500">Puskesmas / Pelayanan ANC</span>
         </div>
       </header>
 
-      <main className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+      {/* Main Container */}
+      <main className="flex-1 py-6 px-4">
         {view === 'form' ? (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 sm:p-8 text-white">
-              <h2 className="text-2xl font-bold mb-2">Formulir Skrining & Rekam Medis Ibu Hamil</h2>
-              <p className="text-slate-300 text-sm max-w-2xl leading-relaxed">
-                Silakan lengkapi data pemeriksaan pasien secara akurat. Sistem pakar akan menganalisis indikator risiko (4T, KEK, Hipertensi, IMT, multi-keluhan, dan riwayat paritas) serta memberikan saran rekomendasi klinis.
+          <div className="max-w-3xl mx-auto bg-white rounded-lg border border-gray-300 shadow-sm overflow-hidden">
+            {/* Header Form */}
+            <div className="border-b border-gray-200 px-6 py-5 bg-white">
+              <h2 className="text-xl font-bold text-gray-900">Formulir Skrining Ibu Hamil</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                Lengkapi formulir pemeriksaan di bawah ini untuk mencatat data pasien dan mengevaluasi tingkat risiko kehamilan.
               </p>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-8">
-              {/* SECTION 1: IDENTITAS PASIEN */}
-              <div>
-                <div className="flex items-center gap-2 pb-3 mb-5 border-b border-slate-100">
-                  <span className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs">1</span>
-                  <h3 className="font-semibold text-slate-800 text-base">Identitas Pasien</h3>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
+            <form onSubmit={handleSubmit} className="p-6 space-y-6">
+              {/* BAGIAN 1: IDENTITAS PASIEN */}
+              <fieldset className="border border-gray-200 rounded-md p-4">
+                <legend className="px-2 text-sm font-bold text-gray-800">
+                  1. Identitas Pasien
+                </legend>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
                   <div>
-                    <label htmlFor="patientId" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                      No. Register / ID Pasien <span className="text-rose-500">*</span>
+                    <label htmlFor="patientId" className="block text-sm font-medium text-gray-700 mb-1">
+                      No. Register / ID Pasien <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
                       id="patientId"
                       name="patientId"
                       required
-                      placeholder="Contoh: RM-2026-001"
+                      placeholder="Contoh: RM-001"
                       value={formData.patientId}
                       onChange={handleChange}
-                      className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
                     />
                   </div>
 
                   <div>
-                    <label htmlFor="name" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Nama Lengkap Pasien <span className="text-rose-500">*</span>
+                    <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                      Nama Pasien <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
                       id="name"
                       name="name"
                       required
-                      placeholder="Nama lengkap ibu hamil"
+                      placeholder="Nama lengkap pasien"
                       value={formData.name}
                       onChange={handleChange}
-                      className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
                     />
                   </div>
 
                   <div>
-                    <label htmlFor="nik" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                      NIK (16 Digit) <span className="text-rose-500">*</span>
+                    <label htmlFor="nik" className="block text-sm font-medium text-gray-700 mb-1">
+                      NIK (16 Digit) <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -262,13 +258,13 @@ function App() {
                       placeholder="7309xxxxxxxxxxxx"
                       value={formData.nik}
                       onChange={handleChange}
-                      className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label htmlFor="birthDate" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                      <label htmlFor="birthDate" className="block text-sm font-medium text-gray-700 mb-1">
                         Tanggal Lahir
                       </label>
                       <input
@@ -277,12 +273,12 @@ function App() {
                         name="birthDate"
                         value={formData.birthDate}
                         onChange={handleChange}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition"
+                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
                       />
                     </div>
                     <div>
-                      <label htmlFor="age" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                        Umur (Tahun) <span className="text-rose-500">*</span>
+                      <label htmlFor="age" className="block text-sm font-medium text-gray-700 mb-1">
+                        Umur (Tahun) <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="number"
@@ -291,34 +287,25 @@ function App() {
                         min="10"
                         max="70"
                         required
-                        placeholder="Th"
+                        placeholder="Contoh: 24"
                         value={formData.age}
                         onChange={handleChange}
-                        className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition"
+                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
                       />
                     </div>
                   </div>
                 </div>
-              </div>
+              </fieldset>
 
-              {/* SECTION 2: ANTROPOMETRI & IMT */}
-              <div>
-                <div className="flex items-center justify-between pb-3 mb-5 border-b border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs">2</span>
-                    <h3 className="font-semibold text-slate-800 text-base">Antropometri & Status Gizi</h3>
-                  </div>
-                  {liveBMI && (
-                    <span className="text-xs px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 font-medium">
-                      IMT: <strong className="text-indigo-600">{liveBMI}</strong> ({liveBMICategory.label})
-                    </span>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+              {/* BAGIAN 2: PEMERIKSAAN FISIK & ANTROPOMETRI */}
+              <fieldset className="border border-gray-200 rounded-md p-4">
+                <legend className="px-2 text-sm font-bold text-gray-800">
+                  2. Pemeriksaan Fisik & Antropometri
+                </legend>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
                   <div>
-                    <label htmlFor="height" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Tinggi Badan (cm) <span className="text-rose-500">*</span>
+                    <label htmlFor="height" className="block text-sm font-medium text-gray-700 mb-1">
+                      Tinggi Badan (cm) <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="number"
@@ -329,13 +316,13 @@ function App() {
                       placeholder="Contoh: 155"
                       value={formData.height}
                       onChange={handleChange}
-                      className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
                     />
                   </div>
 
                   <div>
-                    <label htmlFor="weight" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Berat Badan (kg) <span className="text-rose-500">*</span>
+                    <label htmlFor="weight" className="block text-sm font-medium text-gray-700 mb-1">
+                      Berat Badan (kg) <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="number"
@@ -343,16 +330,16 @@ function App() {
                       id="weight"
                       name="weight"
                       required
-                      placeholder="Contoh: 54"
+                      placeholder="Contoh: 52"
                       value={formData.weight}
                       onChange={handleChange}
-                      className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
                     />
                   </div>
 
                   <div>
-                    <label htmlFor="upperArmCircumference" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                      LILA (cm) <span className="text-rose-500">*</span>
+                    <label htmlFor="upperArmCircumference" className="block text-sm font-medium text-gray-700 mb-1">
+                      LILA (cm) <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="number"
@@ -360,15 +347,15 @@ function App() {
                       id="upperArmCircumference"
                       name="upperArmCircumference"
                       required
-                      placeholder="Batas: 23.5 cm"
+                      placeholder="Batas normal ≥ 23.5 cm"
                       value={formData.upperArmCircumference}
                       onChange={handleChange}
-                      className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
                     />
                   </div>
 
                   <div>
-                    <label htmlFor="bellyCircumference" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    <label htmlFor="bellyCircumference" className="block text-sm font-medium text-gray-700 mb-1">
                       Lingkar Perut (cm)
                     </label>
                     <input
@@ -376,148 +363,146 @@ function App() {
                       step="0.1"
                       id="bellyCircumference"
                       name="bellyCircumference"
-                      placeholder="Contoh: 82"
+                      placeholder="Contoh: 80"
                       value={formData.bellyCircumference}
                       onChange={handleChange}
-                      className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Info Ringkas IMT Otomatis */}
+                  {liveBMI && (
+                    <div className="md:col-span-2 bg-blue-50 border border-blue-200 rounded p-2.5 text-xs text-blue-900 flex items-center justify-between">
+                      <span>Perhitungan IMT Otomatis: <strong>{liveBMI}</strong></span>
+                      <span className="font-semibold">{liveBMICategory.label}</span>
+                    </div>
+                  )}
+                </div>
+              </fieldset>
+
+              {/* BAGIAN 3: TANDA VITAL */}
+              <fieldset className="border border-gray-200 rounded-md p-4">
+                <legend className="px-2 text-sm font-bold text-gray-800">
+                  3. Tanda Vital (Tekanan Darah)
+                </legend>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                  <div>
+                    <label htmlFor="systolic" className="block text-sm font-medium text-gray-700 mb-1">
+                      Sistole (mmHg) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      id="systolic"
+                      name="systolic"
+                      required
+                      placeholder="Contoh: 110"
+                      value={formData.systolic}
+                      onChange={handleChange}
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="diastolic" className="block text-sm font-medium text-gray-700 mb-1">
+                      Diastole (mmHg) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      id="diastolic"
+                      name="diastolic"
+                      required
+                      placeholder="Contoh: 70"
+                      value={formData.diastolic}
+                      onChange={handleChange}
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
                     />
                   </div>
                 </div>
-              </div>
+              </fieldset>
 
-              {/* SECTION 3: TANDA VITAL & KELUHAN (MULTI-SELECT) */}
-              <div>
-                <div className="flex items-center gap-2 pb-3 mb-5 border-b border-slate-100">
-                  <span className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs">3</span>
-                  <h3 className="font-semibold text-slate-800 text-base">Tanda Vital & Keluhan Pasien</h3>
-                </div>
+              {/* BAGIAN 4: KELUHAN PASIEN (CHECKBOX BIASA) */}
+              <fieldset className="border border-gray-200 rounded-md p-4">
+                <legend className="px-2 text-sm font-bold text-gray-800">
+                  4. Keluhan Pasien
+                </legend>
+                <div className="space-y-3 mt-2">
+                  <p className="text-xs text-gray-600">
+                    Pilih keluhan yang dirasakan oleh ibu hamil (bisa pilih lebih dari satu):
+                  </p>
 
-                <div className="space-y-5">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md">
-                    <div>
-                      <label htmlFor="systolic" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                        Sistole (mmHg) <span className="text-rose-500">*</span>
-                      </label>
+                  {/* Checkbox: Tidak Ada Keluhan */}
+                  <div className="p-2.5 bg-gray-50 border border-gray-200 rounded">
+                    <label className="flex items-center space-x-2.5 cursor-pointer text-sm font-medium text-gray-800">
                       <input
-                        type="number"
-                        id="systolic"
-                        name="systolic"
-                        required
-                        placeholder="Contoh: 110"
-                        value={formData.systolic}
-                        onChange={handleChange}
-                        className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition"
+                        type="checkbox"
+                        checked={isNoComplaintChecked}
+                        onChange={(e) => handleSelectNoComplaint(e.target.checked)}
+                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                       />
-                    </div>
-                    <div>
-                      <label htmlFor="diastolic" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                        Diastole (mmHg) <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        id="diastolic"
-                        name="diastolic"
-                        required
-                        placeholder="Contoh: 75"
-                        value={formData.diastolic}
-                        onChange={handleChange}
-                        className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition"
-                      />
-                    </div>
+                      <span>Tidak Ada Keluhan</span>
+                    </label>
                   </div>
 
-                  {/* KELUHAN MULTI-SELECT CHIPS */}
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                        Keluhan Pasien (Bisa Pilih Lebih Dari Satu) <span className="text-rose-500">*</span>
-                      </label>
-                      <span className="text-xs text-slate-500">
-                        {isNoComplaintActive ? 'Tidak ada keluhan aktif' : `${formData.complaints.length + (formData.hasCustomComplaint && formData.customComplaint.trim() ? 1 : 0)} keluhan dipilih`}
-                      </span>
-                    </div>
-
-                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-                      {/* Tombol Opsi: Tidak Ada Keluhan */}
-                      <div>
-                        <button
-                          type="button"
-                          onClick={handleSelectNoComplaint}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
-                            isNoComplaintActive
-                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                          }`}
+                  {/* Grid Checkbox Standar */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                    {COMPLAINT_OPTIONS.map((item) => {
+                      const isChecked = formData.complaints.includes(item);
+                      return (
+                        <label
+                          key={item}
+                          className="flex items-center space-x-2.5 p-2 rounded border border-gray-200 hover:bg-gray-50 cursor-pointer text-sm text-gray-800"
                         >
-                          <span>{isNoComplaintActive ? '✓' : '○'}</span>
-                          <span>Tidak Ada Keluhan (Kondisi Normal)</span>
-                        </button>
-                      </div>
-
-                      {/* Chips Pilihan Keluhan */}
-                      <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-200/60">
-                        {COMPLAINT_OPTIONS.map((item) => {
-                          const isSelected = formData.complaints.includes(item);
-                          return (
-                            <button
-                              key={item}
-                              type="button"
-                              onClick={() => handleComplaintToggle(item)}
-                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
-                                isSelected
-                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                              }`}
-                            >
-                              <span>{isSelected ? '✓' : '+'}</span>
-                              <span>{item}</span>
-                            </button>
-                          );
-                        })}
-
-                        {/* Toggle Keluhan Lainnya */}
-                        <button
-                          type="button"
-                          onClick={() => setFormData((prev) => ({ ...prev, hasCustomComplaint: !prev.hasCustomComplaint }))}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
-                            formData.hasCustomComplaint
-                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                          }`}
-                        >
-                          <span>{formData.hasCustomComplaint ? '✓' : '+'}</span>
-                          <span>Keluhan Lainnya...</span>
-                        </button>
-                      </div>
-
-                      {/* Input teks keluhan tambahan */}
-                      {formData.hasCustomComplaint && (
-                        <div className="pt-2">
                           <input
-                            type="text"
-                            placeholder="Tuliskan keluhan lain pasien di sini..."
-                            value={formData.customComplaint}
-                            onChange={(e) => setFormData((prev) => ({ ...prev, customComplaint: e.target.value }))}
-                            className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs text-slate-800 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 focus:outline-none"
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleComplaintCheckbox(item)}
+                            className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                           />
-                        </div>
-                      )}
-                    </div>
+                          <span>{item}</span>
+                        </label>
+                      );
+                    })}
+
+                    {/* Checkbox Keluhan Lainnya */}
+                    <label className="flex items-center space-x-2.5 p-2 rounded border border-gray-200 hover:bg-gray-50 cursor-pointer text-sm text-gray-800">
+                      <input
+                        type="checkbox"
+                        checked={formData.hasCustomComplaint}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, hasCustomComplaint: e.target.checked }))}
+                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                      />
+                      <span>Lainnya</span>
+                    </label>
                   </div>
-                </div>
-              </div>
 
-              {/* SECTION 4: RIWAYAT OBSTETRI */}
-              <div>
-                <div className="flex items-center gap-2 pb-3 mb-5 border-b border-slate-100">
-                  <span className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs">4</span>
-                  <h3 className="font-semibold text-slate-800 text-base">Riwayat Obstetri & Paritas</h3>
+                  {/* Input Teks Jika Keluhan Lainnya Dicetang */}
+                  {formData.hasCustomComplaint && (
+                    <div className="pt-1">
+                      <label htmlFor="customComplaint" className="block text-xs text-gray-600 mb-1">
+                        Sebutkan keluhan lainnya:
+                      </label>
+                      <input
+                        type="text"
+                        id="customComplaint"
+                        placeholder="Contoh: Nyeri pinggang, sesak napas..."
+                        value={formData.customComplaint}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, customComplaint: e.target.value }))}
+                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                      />
+                    </div>
+                  )}
                 </div>
+              </fieldset>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5">
+              {/* BAGIAN 5: RIWAYAT OBSTETRI */}
+              <fieldset className="border border-gray-200 rounded-md p-4">
+                <legend className="px-2 text-sm font-bold text-gray-800">
+                  5. Riwayat Obstetri & Paritas
+                </legend>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
                   <div>
-                    <label htmlFor="childOrder" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Kehamilan Anak Ke- <span className="text-rose-500">*</span>
+                    <label htmlFor="childOrder" className="block text-sm font-medium text-gray-700 mb-1">
+                      Hamil Anak Ke- <span className="text-red-500">*</span>
                     </label>
                     <select
                       id="childOrder"
@@ -525,7 +510,7 @@ function App() {
                       required
                       value={formData.childOrder}
                       onChange={handleChange}
-                      className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 bg-white focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
                     >
                       <option value="1">1 (Anak Pertama / Primigravida)</option>
                       <option value="2">2</option>
@@ -536,8 +521,8 @@ function App() {
                   </div>
 
                   <div>
-                    <label htmlFor="everPregnant" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Pernah Hamil Sebelumnya? <span className="text-rose-500">*</span>
+                    <label htmlFor="everPregnant" className="block text-sm font-medium text-gray-700 mb-1">
+                      Pernah Hamil Sebelumnya? <span className="text-red-500">*</span>
                     </label>
                     <select
                       id="everPregnant"
@@ -545,17 +530,17 @@ function App() {
                       required
                       value={formData.everPregnant}
                       onChange={handleChange}
-                      className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 bg-white focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
                     >
-                      <option value="Tidak">Tidak (Kehamilan Pertama)</option>
-                      <option value="Ya">Ya (Pernah)</option>
+                      <option value="Tidak">Tidak</option>
+                      <option value="Ya">Ya</option>
                     </select>
                   </div>
 
-                  {formData.everPregnant === 'Ya' ? (
-                    <div>
-                      <label htmlFor="previousPregnancyRisk" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                        Riwayat Kehamilan Lalu <span className="text-rose-500">*</span>
+                  {formData.everPregnant === 'Ya' && (
+                    <div className="md:col-span-2">
+                      <label htmlFor="previousPregnancyRisk" className="block text-sm font-medium text-gray-700 mb-1">
+                        Riwayat Kehamilan Sebelumnya <span className="text-red-500">*</span>
                       </label>
                       <select
                         id="previousPregnancyRisk"
@@ -563,33 +548,25 @@ function App() {
                         required
                         value={formData.previousPregnancyRisk}
                         onChange={handleChange}
-                        className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 bg-white focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition"
+                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
                       >
                         <option value="Risiko rendah">Risiko Rendah / Normal</option>
-                        <option value="Risiko tinggi">Risiko Tinggi / Komplikasi</option>
+                        <option value="Risiko tinggi">Risiko Tinggi / Riwayat Komplikasi</option>
                       </select>
-                    </div>
-                  ) : (
-                    <div className="flex items-center">
-                      <div className="w-full p-2.5 bg-slate-50 border border-dashed border-slate-200 rounded-lg text-xs text-slate-500">
-                        Kehamilan pertama: Riwayat kehamilan lampau tidak berlaku.
-                      </div>
                     </div>
                   )}
                 </div>
-              </div>
+              </fieldset>
 
-              {/* SECTION 5: CATATAN KLINIS & DIAGNOSA */}
-              <div>
-                <div className="flex items-center gap-2 pb-3 mb-5 border-b border-slate-100">
-                  <span className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs">5</span>
-                  <h3 className="font-semibold text-slate-800 text-base">Catatan Klinis Bidan (Log Book)</h3>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
+              {/* BAGIAN 6: CATATAN KLINIS BIDAN */}
+              <fieldset className="border border-gray-200 rounded-md p-4">
+                <legend className="px-2 text-sm font-bold text-gray-800">
+                  6. Catatan Klinis & Diagnosa
+                </legend>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
                   <div>
-                    <label htmlFor="diagnosis" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Diagnosa Awal <span className="text-rose-500">*</span>
+                    <label htmlFor="diagnosis" className="block text-sm font-medium text-gray-700 mb-1">
+                      Diagnosa Awal <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -599,54 +576,41 @@ function App() {
                       placeholder="Supervision of normal pregnancy, unspecified"
                       value={formData.diagnosis}
                       onChange={handleChange}
-                      className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
                     />
                   </div>
 
                   <div>
-                    <label htmlFor="palpation" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Hasil Palpasi & Catatan
+                    <label htmlFor="palpation" className="block text-sm font-medium text-gray-700 mb-1">
+                      Palpasi / Catatan Bidan
                     </label>
                     <input
                       type="text"
                       id="palpation"
                       name="palpation"
-                      placeholder="Contoh: TFU sesuai usia gestasi, punggung kiri, letak kepala"
+                      placeholder="TFU sesuai usia gestasi, letak kepala..."
                       value={formData.palpation}
                       onChange={handleChange}
-                      className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
                     />
                   </div>
                 </div>
-              </div>
+              </fieldset>
 
-              {/* ACTION BUTTON */}
-              <div className="pt-4 border-t border-slate-100">
+              {/* TOMBOL SUBMIT */}
+              <div className="pt-2">
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-semibold py-3.5 px-6 rounded-xl shadow-sm transition flex items-center justify-center space-x-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-md shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 >
-                  {isSubmitting ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      <span>Menyimpan ke Spreadsheet & Menganalisis...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Simpan ke Spreadsheet & Evaluasi Risiko</span>
-                      <span>→</span>
-                    </>
-                  )}
+                  {isSubmitting ? 'Menyimpan Data...' : 'Simpan Data Pasien & Lihat Saran Evaluasi'}
                 </button>
 
                 {submitStatus === 'error' && (
-                  <div className="mt-3 p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm text-center">
-                    Gagal mengirim ke Google Apps Script, namun data tetap dapat dievaluasi secara lokal.
-                  </div>
+                  <p className="text-xs text-red-600 text-center mt-2">
+                    Gagal mengirim ke spreadsheet. Namun data tetap dapat dievaluasi.
+                  </p>
                 )}
               </div>
             </form>
