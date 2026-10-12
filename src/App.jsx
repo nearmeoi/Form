@@ -284,17 +284,13 @@ function App() {
         <div className="max-w-2xl mx-auto px-4 py-3.5 flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
             <span className="w-8 h-8 rounded-full bg-[#00880C] text-white flex items-center justify-center font-bold text-sm shadow-xs">
-              M
+              ATQ
             </span>
             <div>
-              <h1 className="text-sm font-bold text-slate-900 tracking-tight leading-tight">Maternal Care</h1>
-              <p className="text-[11px] text-slate-500">Skrining & Evaluasi Risiko Ibu Hamil</p>
+              <h1 className="text-sm font-bold text-slate-900 tracking-tight leading-tight">Form Kehamilan</h1>
+              <p className="text-[11px] text-slate-500">Evaluasi Risiko Ibu Hamil</p>
             </div>
           </div>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-50 text-[#00880C] border border-emerald-100">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#00880C]"></span>
-            <span>Versi Praktik Bidan</span>
-          </span>
         </div>
       </header>
 
@@ -304,9 +300,9 @@ function App() {
           <div className="max-w-2xl mx-auto bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
             {/* Header Form */}
             <div className="border-b border-slate-100 px-6 py-5 bg-white">
-              <h2 className="text-lg font-bold text-slate-900 tracking-tight">Formulir Skrining Pasien</h2>
+              <h2 className="text-lg font-bold text-slate-900 tracking-tight">Formulir Pasien</h2>
               <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                Isi data hasil pemeriksaan ibu hamil untuk mendapatkan evaluasi risiko otomatis serta menyimpan catatan ke sistem.
+                Isi data pemeriksaan ibu hamil untuk mendapatkan evaluasi risiko.
               </p>
             </div>
 
@@ -321,7 +317,7 @@ function App() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
                   <div>
                     <label htmlFor="patientId" className="block text-xs font-semibold text-slate-700 mb-1">
-                      No. Register / ID Pasien <span className="text-rose-500">*</span>
+                      ID Pasien <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -744,7 +740,7 @@ function App() {
                       <span>Menyimpan & Menganalisis Data...</span>
                     </>
                   ) : (
-                    <span>Simpan & Lihat Saran Evaluasi →</span>
+                    <span>Simpan & Lihat Saran Evaluasi</span>
                   )}
                 </button>
               </div>
