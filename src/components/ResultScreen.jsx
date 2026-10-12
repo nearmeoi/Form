@@ -13,174 +13,241 @@ export default function ResultScreen({ evaluationResult, onReset }) {
 
   const { level, title, message, flags = [], tips = [], clinicalNotes = [], score = 0, patientData } = evaluationResult;
 
-  // Level configuration
-  const levelConfig = {
+  // Konfigurasi visual berdasarkan level risiko
+  const levelTheme = {
     rendah: {
-      badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-      dotColor: 'bg-emerald-500',
+      cardBorder: 'border-emerald-300',
+      badgeBg: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+      badgeLabel: 'Risiko Rendah',
       badgeIcon: '✓',
-      badgeText: 'Risiko Rendah',
-      headerBg: 'from-emerald-500/10 to-transparent'
+      accentColor: 'text-emerald-700',
+      actionAlertBg: 'bg-emerald-50 border-emerald-200 text-emerald-900',
+      actionIcon: '🟢',
+      actionLead: 'Kondisi Relatif Terjaga & Aman',
+      actionSub: 'Lanjutkan pola hidup sehat dan pemeriksaan rutin sesuai jadwal bidan/puskesmas.'
     },
     sedang: {
-      badgeColor: 'bg-amber-50 text-amber-700 border-amber-200',
-      dotColor: 'bg-amber-500',
+      cardBorder: 'border-amber-300',
+      badgeBg: 'bg-amber-100 text-amber-800 border-amber-300',
+      badgeLabel: 'Risiko Sedang',
       badgeIcon: '!',
-      badgeText: 'Risiko Sedang',
-      headerBg: 'from-amber-500/10 to-transparent'
+      accentColor: 'text-amber-700',
+      actionAlertBg: 'bg-amber-50 border-amber-200 text-amber-900',
+      actionIcon: '🟡',
+      actionLead: 'Perlu Pemantauan & Perhatian Khusus',
+      actionSub: 'Ada indikasi yang membutuhkan penyesuaian pola makan/istirahat serta kontrol ANC lebih teratur.'
     },
     tinggi: {
-      badgeColor: 'bg-rose-50 text-rose-700 border-rose-200',
-      dotColor: 'bg-rose-500',
+      cardBorder: 'border-rose-300',
+      badgeBg: 'bg-rose-100 text-rose-800 border-rose-300',
+      badgeLabel: 'Risiko Tinggi',
       badgeIcon: '⚠',
-      badgeText: 'Risiko Tinggi',
-      headerBg: 'from-rose-500/10 to-transparent'
+      accentColor: 'text-rose-700',
+      actionAlertBg: 'bg-rose-50 border-rose-200 text-rose-900',
+      actionIcon: '🔴',
+      actionLead: 'Rekomendasi Rujukan Dokter Spesialis (Sp.OG)',
+      actionSub: 'Ditemukan faktor risiko penting. Segera konsultasikan ke fasilitas kesehatan rujukan untuk evaluasi mendalam.'
     },
     sangat_tinggi: {
-      badgeColor: 'bg-purple-50 text-purple-700 border-purple-200',
-      dotColor: 'bg-purple-600',
+      cardBorder: 'border-purple-300',
+      badgeBg: 'bg-purple-100 text-purple-800 border-purple-300',
+      badgeLabel: 'Risiko Sangat Tinggi',
       badgeIcon: '🚨',
-      badgeText: 'Risiko Sangat Tinggi',
-      headerBg: 'from-purple-500/10 to-transparent'
+      accentColor: 'text-purple-800',
+      actionAlertBg: 'bg-purple-50 border-purple-200 text-purple-900',
+      actionIcon: '🚨',
+      actionLead: 'Peringatan Medis: Waspada Komplikasi Kritis',
+      actionSub: 'Kombinasi faktor risiko tinggi terdeteksi. Segera hubungi dokter kandungan atau IGD Rumah Sakit.'
     }
   };
 
-  const currentLevel = levelConfig[level] || levelConfig.rendah;
+  const theme = levelTheme[level] || levelTheme.rendah;
+
+  // Helper memisahkan judul saran (sebelum titik dua) dan penjelasannya
+  const parseTip = (tipText) => {
+    const colonIndex = tipText.indexOf(':');
+    if (colonIndex > 0 && colonIndex < 40) {
+      return {
+        category: tipText.slice(0, colonIndex).trim(),
+        text: tipText.slice(colonIndex + 1).trim()
+      };
+    }
+    return {
+      category: 'Saran',
+      text: tipText
+    };
+  };
 
   return (
-    <div className="w-full max-w-2xl mx-auto space-y-6">
+    <div className="w-full max-w-2xl mx-auto py-2">
       <div
-        className={`bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-700 ease-out transform ${
-          isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
+        className={`bg-white rounded-xl border-2 ${theme.cardBorder} shadow-sm overflow-hidden transition-all duration-500 ease-out transform ${
+          isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
         }`}
       >
-        {/* TOP STATUS CARD */}
-        <div className={`p-6 sm:p-8 bg-gradient-to-b ${currentLevel.headerBg} border-b border-slate-100 text-center`}>
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border mb-4 font-semibold text-xs tracking-wider uppercase shadow-xs bg-white/80 backdrop-blur-xs">
-            <span className="text-base">{currentLevel.badgeIcon}</span>
-            <span className={currentLevel.badgeColor.split(' ')[1]}>{currentLevel.badgeText}</span>
-            <span className="text-slate-400 font-normal">| Skor Risiko: {score}</span>
+        {/* 1. HERO BANNER: STATUS & KESIMPULAN UTAMA (FOKUS UTAMA) */}
+        <div className="p-6 text-center border-b border-gray-100 bg-white">
+          {/* Badge Level */}
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider border mb-3 shadow-2xs">
+            <span className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-xs ${theme.badgeBg}`}>
+              {theme.badgeIcon}
+            </span>
+            <span className={theme.accentColor}>{theme.badgeLabel}</span>
+            <span className="text-gray-400 font-normal">|</span>
+            <span className="text-gray-500 font-medium">Skor: {score}</span>
           </div>
 
-          <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-3">{title}</h2>
-          <p className="text-slate-600 text-sm sm:text-base leading-relaxed max-w-lg mx-auto">{message}</p>
+          {/* Judul Utama */}
+          <h2 className="text-2xl font-bold text-gray-900 tracking-tight mb-2">
+            {title}
+          </h2>
+
+          {/* Penjelasan Ringkas */}
+          <p className="text-sm text-gray-600 max-w-lg mx-auto leading-relaxed">
+            {message}
+          </p>
         </div>
 
-        <div className="p-6 sm:p-8 space-y-8">
-          {/* FAKTOR RISIKO TERDETEKSI */}
+        {/* 2. CALLOUT BOX: TINDAKAN UTAMA YANG HARUS DIAMBIL */}
+        <div className="px-6 pt-5">
+          <div className={`p-4 rounded-lg border ${theme.actionAlertBg} flex items-start gap-3`}>
+            <span className="text-xl flex-shrink-0 mt-0.5">{theme.actionIcon}</span>
+            <div>
+              <h3 className="text-sm font-bold leading-snug">
+                {theme.actionLead}
+              </h3>
+              <p className="text-xs mt-1 opacity-90 leading-relaxed">
+                {theme.actionSub}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* 3. FAKTOR RISIKO TERDETEKSI (JIKA ADA) */}
           {flags.length > 0 && (
             <div>
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-                Faktor Risiko Terdeteksi ({flags.length})
-              </h3>
+              <div className="flex items-center justify-between mb-2.5">
+                <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  Faktor Risiko yang Terdeteksi
+                </h4>
+                <span className="text-xs font-semibold px-2 py-0.5 bg-rose-100 text-rose-700 rounded-full">
+                  {flags.length} Indikator
+                </span>
+              </div>
               <div className="flex flex-wrap gap-2">
                 {flags.map((flag, idx) => (
                   <span
                     key={idx}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-100"
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200"
                   >
-                    <span>•</span> {flag}
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                    <span>{flag}</span>
                   </span>
                 ))}
               </div>
             </div>
           )}
 
-          {/* SARAN & REKOMENDASI KLINIS */}
+          {/* 4. SARAN & REKOMENDASI KLINIS TERSTRUKTUR */}
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Saran & Rekomendasi Tindakan ({tips.length})
-              </h3>
-            </div>
+            <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-3">
+              Rekomendasi Tindakan & Edukasi
+            </h4>
 
-            <div className="space-y-3">
-              {tips.map((tip, index) => (
-                <div
-                  key={index}
-                  className="bg-slate-50 border border-slate-100 rounded-xl p-4 flex items-start gap-3.5 hover:border-slate-200 transition"
-                >
-                  <div className={`w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0 ${currentLevel.dotColor}`} />
-                  <p className="text-slate-700 text-sm leading-relaxed">{tip}</p>
-                </div>
-              ))}
+            <div className="space-y-2.5">
+              {tips.map((tip, index) => {
+                const parsed = parseTip(tip);
+                return (
+                  <div
+                    key={index}
+                    className="p-3.5 bg-gray-50 rounded-lg border border-gray-200 flex items-start gap-3 hover:bg-gray-100/60 transition"
+                  >
+                    <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center flex-shrink-0 mt-0.5">
+                      {index + 1}
+                    </span>
+                    <div className="text-xs leading-relaxed text-gray-800">
+                      {parsed.category !== 'Saran' && (
+                        <span className="font-bold text-gray-900 block mb-0.5">
+                          {parsed.category}
+                        </span>
+                      )}
+                      <p className="text-gray-700">{parsed.text}</p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          {/* CATATAN TAMBAHAN (JIKA PRIMIGRAVIDA DLL) */}
+          {/* 5. CATATAN EDUKASI PRIMIGRAVIDA DLL (JIKA ADA) */}
           {clinicalNotes.length > 0 && (
-            <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-4">
-              <h4 className="text-xs font-bold text-indigo-900 uppercase tracking-wider mb-2">
-                Catatan Asuhan Bidan:
-              </h4>
-              <ul className="text-xs text-indigo-800 space-y-1 list-disc list-inside">
+            <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-blue-900">
+              <strong className="block font-bold mb-1">Catatan Bidan:</strong>
+              <ul className="list-disc list-inside space-y-1">
                 {clinicalNotes.map((note, idx) => (
-                  <li key={idx}>{note}</li>
+                  <li key={idx} className="leading-relaxed">{note}</li>
                 ))}
               </ul>
             </div>
           )}
 
-          {/* RINGKASAN DATA PASIEN (COLLAPSIBLE) */}
+          {/* 6. RINGKASAN DATA PASIEN (COLLAPSIBLE / DAPAT DIBUKA-TUTUP) */}
           {patientData && (
-            <div className="border border-slate-200 rounded-xl overflow-hidden">
+            <div className="border border-gray-200 rounded-lg overflow-hidden text-xs">
               <button
                 type="button"
                 onClick={() => setShowDetails(!showDetails)}
-                className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 flex items-center justify-between text-left text-xs font-semibold text-slate-700 transition"
+                className="w-full px-4 py-2.5 bg-gray-50 hover:bg-gray-100 flex items-center justify-between font-semibold text-gray-700 transition"
               >
-                <span>Ringkasan Data Pasien & Antropometri</span>
-                <span>{showDetails ? '▲ Sembunyikan' : '▼ Tampilkan'}</span>
+                <span>Ringkasan Data Pemeriksaan Pasien</span>
+                <span className="text-gray-500 font-normal">
+                  {showDetails ? '▲ Tutup' : '▼ Lihat Rincian'}
+                </span>
               </button>
 
               {showDetails && (
-                <div className="p-4 grid grid-cols-2 sm:grid-cols-3 gap-3 bg-white text-xs">
+                <div className="p-4 grid grid-cols-2 sm:grid-cols-3 gap-3 bg-white border-t border-gray-200">
                   <div>
-                    <span className="text-slate-400 block">No. Register / ID:</span>
-                    <strong className="text-slate-800">{patientData.patientId || '-'}</strong>
+                    <span className="text-gray-400 block text-[11px]">ID Pasien:</span>
+                    <span className="font-semibold text-gray-900">{patientData.patientId || '-'}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block">Umur:</span>
-                    <span className="text-slate-800">{patientData.age ? `${patientData.age} Tahun` : '-'}</span>
+                    <span className="text-gray-400 block text-[11px]">Umur:</span>
+                    <span className="font-semibold text-gray-900">{patientData.age ? `${patientData.age} Tahun` : '-'}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block">IMT:</span>
-                    <span className="text-slate-800">{patientData.bmi || '-'} ({patientData.bmiCategory?.category || '-'})</span>
+                    <span className="text-gray-400 block text-[11px]">Status IMT:</span>
+                    <span className="font-semibold text-gray-900">{patientData.bmi || '-'} ({patientData.bmiCategory?.category || '-'})</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block">Tekanan Darah:</span>
-                    <span className="text-slate-800">{patientData.bloodPressure}</span>
+                    <span className="text-gray-400 block text-[11px]">Tekanan Darah:</span>
+                    <span className="font-semibold text-gray-900">{patientData.bloodPressure}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block">LILA / Lingkar Perut:</span>
-                    <span className="text-slate-800">{patientData.upperArmCircumference} / {patientData.bellyCircumference}</span>
-                  </div>
-                  <div className="col-span-2 sm:col-span-3">
-                    <span className="text-slate-400 block">Keluhan Terpilih:</span>
-                    <span className="text-slate-800 font-medium">
-                      {patientData.complaintText || (Array.isArray(patientData.complaints) ? patientData.complaints.join(', ') : patientData.complaint) || 'Tidak Ada'}
-                    </span>
+                    <span className="text-gray-400 block text-[11px]">LILA / Lingkar Perut:</span>
+                    <span className="font-semibold text-gray-900">{patientData.upperArmCircumference} / {patientData.bellyCircumference}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block">Anak Ke-:</span>
-                    <span className="text-slate-800">{patientData.childOrder}</span>
+                    <span className="text-gray-400 block text-[11px]">Hamil Anak Ke-:</span>
+                    <span className="font-semibold text-gray-900">{patientData.childOrder}</span>
                   </div>
-                  <div>
-                    <span className="text-slate-400 block">Pernah Hamil:</span>
-                    <span className="text-slate-800">{patientData.everPregnant}</span>
+                  <div className="col-span-2 sm:col-span-3 pt-1 border-t border-gray-100">
+                    <span className="text-gray-400 block text-[11px]">Keluhan:</span>
+                    <span className="font-medium text-gray-800">{patientData.complaintText || 'Tidak Ada Keluhan'}</span>
                   </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* ACTION BUTTON */}
+          {/* 7. TOMBOL KEMBALI / INPUT PASIEN BARU */}
           <div className="pt-2 text-center">
             <button
               onClick={onReset}
-              className="w-full sm:w-auto px-8 py-3 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 transition shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 text-sm"
+              className="w-full sm:w-auto px-6 py-2.5 bg-gray-900 hover:bg-gray-800 text-white font-medium rounded-md transition text-sm shadow-sm"
             >
-              + Input Pasien Baru
+              ← Kembali & Input Pasien Baru
             </button>
           </div>
         </div>
