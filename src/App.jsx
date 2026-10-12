@@ -1,6 +1,12 @@
 import { useState, useMemo } from 'react';
 import ResultScreen from './components/ResultScreen';
 import { evaluateRisk, calculateBMI, getBMICategory } from './utils/evaluateRisk';
+import {
+  generateReferenceId,
+  saveToLocalQueue,
+  updateLocalRecordStatus,
+  syncToSpreadsheet
+} from './utils/submissionService';
 
 const COMPLAINT_LIST = [
   'Mual',
@@ -22,7 +28,6 @@ const INITIAL_FORM_STATE = {
   bellyCircumference: '',
   systolic: '',
   diastolic: '',
-  // Simpan status setiap keluhan: { [namaKeluhan]: { selected: boolean, frequency: 'Sering' | 'Jarang' | 'Tidak Pernah' } }
   complaintsMap: COMPLAINT_LIST.reduce((acc, curr) => {
     acc[curr] = { selected: false, frequency: 'Sering' };
     return acc;
@@ -42,9 +47,13 @@ function App() {
   const [evaluationResult, setEvaluationResult] = useState(null);
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitStatus, setSubmitStatus] = useState('idle');
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [refId, setRefId] = useState('');
+  const [syncStatus, setSyncStatus] = useState('idle'); // 'idle' | 'synced' | 'timeout' | 'error' | 'offline' | 'no_url'
+  const [syncError, setSyncError] = useState(null);
+  const [lastSubmission, setLastSubmission] = useState(null);
 
-  // Live BMI calculation
+  // Perhitungan IMT real-time
   const liveBMI = useMemo(() => {
     return calculateBMI(formData.height, formData.weight);
   }, [formData.height, formData.weight]);
@@ -67,7 +76,6 @@ function App() {
         [item]: {
           ...current,
           selected: !current.selected,
-          // Default jika baru dicentang
           frequency: !current.selected ? (current.frequency || 'Sering') : current.frequency
         }
       };
@@ -114,12 +122,14 @@ function App() {
     return fromList || fromCustom;
   }, [formData.complaintsMap, formData.hasCustomComplaint, formData.customComplaintName, formData.customComplaintFrequency]);
 
+  // Submit Handler: Dilengkapi proteksi concurrency, timeout, dan fallback lokal
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return; // Mencegah double submit / debouncing
     setIsSubmitting(true);
-    setSubmitStatus('idle');
+    setSyncError(null);
 
-    // Kumpulkan keluhan beserta frekuensinya
+    // 1. Kumpulkan daftar keluhan aktif
     const complaintItems = [];
     COMPLAINT_LIST.forEach((name) => {
       const entry = formData.complaintsMap[name];
@@ -151,95 +161,154 @@ function App() {
       bmiCategory: liveBMICategory.label
     };
 
-    const url = import.meta.env.VITE_GAS_URL;
+    // 2. Evaluasi risiko menggunakan sistem pakar forward chaining
+    const evaluation = evaluateRisk(evaluatedData);
+    const generatedRefId = generateReferenceId();
 
+    // 3. Cadangkan langsung ke penyimpanan browser (Offline-first / Anti-data-loss)
+    const localRecord = {
+      refId: generatedRefId,
+      timestamp: new Date().toISOString(),
+      patientData: evaluatedData,
+      evaluationResult: evaluation,
+      syncStatus: 'pending'
+    };
+    saveToLocalQueue(localRecord);
+
+    // 4. Siapkan payload data untuk Google Spreadsheet
+    const payload = {
+      ref_id: generatedRefId,
+      id_pasien: evaluatedData.patientId,
+      umur: evaluatedData.age,
+      keluhan_utama: complaintString,
+      tinggi_badan: evaluatedData.height,
+      berat_badan: evaluatedData.weight,
+      lingkar_perut: evaluatedData.bellyCircumference,
+      imt: liveBMI ? liveBMI.toString() : '',
+      hasil_imt: liveBMICategory.label,
+      sistole: evaluatedData.systolic,
+      diastole: evaluatedData.diastolic,
+      tekanan_darah: `${evaluatedData.systolic}/${evaluatedData.diastolic}`,
+      lila: evaluatedData.upperArmCircumference,
+      anak_ke: evaluatedData.childOrder,
+      pernah_hamil: evaluatedData.everPregnant,
+      kehamilan_sebelum: evaluatedData.everPregnant === 'Ya' ? evaluatedData.previousPregnancyRisk : '-',
+      palpasi: evaluatedData.palpation,
+      diagnosa: evaluatedData.diagnosis,
+      skor_risiko: evaluation.score.toString(),
+      level_risiko: evaluation.level,
+      kesimpulan: evaluation.title
+    };
+
+    setRefId(generatedRefId);
+    setEvaluationResult(evaluation);
+    setLastSubmission({ payload, refId: generatedRefId });
+
+    // 5. Kirim ke Google Spreadsheet dengan proteksi timeout & penanganan error
     try {
-      if (url) {
-        const payload = new URLSearchParams({
-          id_pasien: evaluatedData.patientId,
-          umur: evaluatedData.age,
-          keluhan_utama: complaintString,
-          tinggi_badan: evaluatedData.height,
-          berat_badan: evaluatedData.weight,
-          lingkar_perut: evaluatedData.bellyCircumference,
-          imt: liveBMI ? liveBMI.toString() : '',
-          hasil_imt: liveBMICategory.label,
-          sistole: evaluatedData.systolic,
-          diastole: evaluatedData.diastolic,
-          tekanan_darah: `${evaluatedData.systolic}/${evaluatedData.diastolic}`,
-          lila: evaluatedData.upperArmCircumference,
-          anak_ke: evaluatedData.childOrder,
-          pernah_hamil: evaluatedData.everPregnant,
-          kehamilan_sebelum: evaluatedData.everPregnant === 'Ya' ? evaluatedData.previousPregnancyRisk : '-',
-          palpasi: evaluatedData.palpation,
-          diagnosa: evaluatedData.diagnosis
-        });
-
-        await fetch(url, {
-          method: 'POST',
-          mode: 'no-cors',
-          body: payload
-        });
+      const syncRes = await syncToSpreadsheet(payload, { timeoutMs: 12000, maxRetries: 1 });
+      
+      if (syncRes.success) {
+        setSyncStatus('synced');
+        setSyncError(null);
+        updateLocalRecordStatus(generatedRefId, 'synced');
       } else {
-        console.warn('VITE_GAS_URL belum diset di .env. Data tidak dikirim ke Google Sheets, langsung menampilkan hasil evaluasi.');
+        setSyncStatus(syncRes.status);
+        setSyncError(syncRes.message);
+        updateLocalRecordStatus(generatedRefId, syncRes.status, syncRes.message);
       }
-
-      setSubmitStatus('success');
-
-      // Evaluasi risiko sistem pakar forward chaining
-      const result = evaluateRisk(evaluatedData);
-      setEvaluationResult(result);
-      setView('result');
-    } catch (error) {
-      console.error('Submit error:', error);
-      setSubmitStatus('error');
+    } catch (err) {
+      console.error('Unhandled sync error:', err);
+      setSyncStatus('error');
+      setSyncError('Koneksi terputus saat menyimpan data ke spreadsheet.');
+      updateLocalRecordStatus(generatedRefId, 'error', err.message);
     } finally {
       setIsSubmitting(false);
+      // PENTING: Pengguna TETAP langsung diarahkan ke halaman hasil evaluasi klinis!
+      // Petugas kesehatan tidak boleh terhambat hanya karena spreadsheet lambat/offline.
+      setView('result');
+    }
+  };
+
+  // Fungsi Kirim Ulang Sinkronisasi (Retry Sync) dari ResultScreen
+  const handleRetrySync = async () => {
+    if (!lastSubmission || isRetrying) return;
+    setIsRetrying(true);
+
+    try {
+      const result = await syncToSpreadsheet(lastSubmission.payload, { timeoutMs: 12000, maxRetries: 0 });
+      if (result.success) {
+        setSyncStatus('synced');
+        setSyncError(null);
+        updateLocalRecordStatus(lastSubmission.refId, 'synced');
+      } else {
+        setSyncStatus(result.status);
+        setSyncError(result.message);
+        updateLocalRecordStatus(lastSubmission.refId, result.status, result.message);
+      }
+    } catch (err) {
+      setSyncStatus('error');
+      setSyncError('Koneksi masih belum stabil. Silakan coba lagi nanti.');
+    } finally {
+      setIsRetrying(false);
     }
   };
 
   const handleReset = () => {
     setFormData(INITIAL_FORM_STATE);
     setEvaluationResult(null);
-    setSubmitStatus('idle');
+    setSyncStatus('idle');
+    setSyncError(null);
+    setRefId('');
+    setLastSubmission(null);
     setView('form');
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col font-sans">
-      {/* Header Bar */}
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <span className="text-xl">📋</span>
-            <h1 className="text-lg font-bold text-gray-900 tracking-tight">KlinikApp Maternal</h1>
+    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800">
+      {/* Header Bar Minimalis Gaya Gojek */}
+      <header className="bg-white border-b border-slate-200/80 sticky top-0 z-20">
+        <div className="max-w-2xl mx-auto px-4 py-3.5 flex items-center justify-between">
+          <div className="flex items-center space-x-2.5">
+            <span className="w-8 h-8 rounded-full bg-[#00880C] text-white flex items-center justify-center font-bold text-sm shadow-xs">
+              M
+            </span>
+            <div>
+              <h1 className="text-sm font-bold text-slate-900 tracking-tight leading-tight">Maternal Care</h1>
+              <p className="text-[11px] text-slate-500">Skrining & Evaluasi Risiko Ibu Hamil</p>
+            </div>
           </div>
-          <span className="text-xs text-gray-500">Form Skrining Kehamilan</span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-50 text-[#00880C] border border-emerald-100">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#00880C]"></span>
+            <span>Versi Praktik Bidan</span>
+          </span>
         </div>
       </header>
 
       {/* Main Container */}
-      <main className="flex-1 py-6 px-4">
+      <main className="flex-1 py-5 px-4">
         {view === 'form' ? (
-          <div className="max-w-3xl mx-auto bg-white rounded-lg border border-gray-300 shadow-sm overflow-hidden">
+          <div className="max-w-2xl mx-auto bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
             {/* Header Form */}
-            <div className="border-b border-gray-200 px-6 py-5 bg-white">
-              <h2 className="text-xl font-bold text-gray-900">Formulir Skrining Kesehatan Ibu Hamil</h2>
-              <p className="text-sm text-gray-600 mt-1">
-                Lengkapi informasi pemeriksaan di bawah ini untuk mencatat data dan melihat evaluasi risiko kehamilan.
+            <div className="border-b border-slate-100 px-6 py-5 bg-white">
+              <h2 className="text-lg font-bold text-slate-900 tracking-tight">Formulir Skrining Pasien</h2>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                Isi data hasil pemeriksaan ibu hamil untuk mendapatkan evaluasi risiko otomatis serta menyimpan catatan ke sistem.
               </p>
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-6">
               {/* BAGIAN 1: INFORMASI PASIEN */}
-              <fieldset className="border border-gray-200 rounded-md p-4">
-                <legend className="px-2 text-sm font-bold text-gray-800">
-                  1. Informasi Pasien
-                </legend>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  <span className="w-5 h-5 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center text-[11px]">1</span>
+                  <span>Informasi Pasien</span>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
                   <div>
-                    <label htmlFor="patientId" className="block text-sm font-medium text-gray-700 mb-1">
-                      No. Register / ID Pasien <span className="text-red-500">*</span>
+                    <label htmlFor="patientId" className="block text-xs font-semibold text-slate-700 mb-1">
+                      No. Register / ID Pasien <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -249,13 +318,13 @@ function App() {
                       placeholder="Contoh: RM-001"
                       value={formData.patientId}
                       onChange={handleChange}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
                     />
                   </div>
 
                   <div>
-                    <label htmlFor="age" className="block text-sm font-medium text-gray-700 mb-1">
-                      Umur Pasien (Tahun) <span className="text-red-500">*</span>
+                    <label htmlFor="age" className="block text-xs font-semibold text-slate-700 mb-1">
+                      Umur Pasien (Tahun) <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="number"
@@ -267,21 +336,25 @@ function App() {
                       placeholder="Contoh: 24"
                       value={formData.age}
                       onChange={handleChange}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
                     />
                   </div>
                 </div>
-              </fieldset>
+              </div>
+
+              <hr className="border-slate-100" />
 
               {/* BAGIAN 2: PEMERIKSAAN FISIK & ANTROPOMETRI */}
-              <fieldset className="border border-gray-200 rounded-md p-4">
-                <legend className="px-2 text-sm font-bold text-gray-800">
-                  2. Pemeriksaan Fisik & Antropometri
-                </legend>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  <span className="w-5 h-5 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center text-[11px]">2</span>
+                  <span>Pemeriksaan Fisik & Antropometri</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
                   <div>
-                    <label htmlFor="height" className="block text-sm font-medium text-gray-700 mb-1">
-                      Tinggi Badan (cm) <span className="text-red-500">*</span>
+                    <label htmlFor="height" className="block text-xs font-semibold text-slate-700 mb-1">
+                      Tinggi Badan (cm) <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="number"
@@ -292,13 +365,13 @@ function App() {
                       placeholder="Contoh: 155"
                       value={formData.height}
                       onChange={handleChange}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
                     />
                   </div>
 
                   <div>
-                    <label htmlFor="weight" className="block text-sm font-medium text-gray-700 mb-1">
-                      Berat Badan (kg) <span className="text-red-500">*</span>
+                    <label htmlFor="weight" className="block text-xs font-semibold text-slate-700 mb-1">
+                      Berat Badan (kg) <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="number"
@@ -309,13 +382,13 @@ function App() {
                       placeholder="Contoh: 52"
                       value={formData.weight}
                       onChange={handleChange}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
                     />
                   </div>
 
                   <div>
-                    <label htmlFor="upperArmCircumference" className="block text-sm font-medium text-gray-700 mb-1">
-                      LILA (cm) <span className="text-red-500">*</span>
+                    <label htmlFor="upperArmCircumference" className="block text-xs font-semibold text-slate-700 mb-1">
+                      LILA (cm) <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="number"
@@ -323,15 +396,15 @@ function App() {
                       id="upperArmCircumference"
                       name="upperArmCircumference"
                       required
-                      placeholder="Batas normal ≥ 23.5 cm"
+                      placeholder="Normal ≥ 23.5 cm"
                       value={formData.upperArmCircumference}
                       onChange={handleChange}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
                     />
                   </div>
 
                   <div>
-                    <label htmlFor="bellyCircumference" className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="bellyCircumference" className="block text-xs font-semibold text-slate-700 mb-1">
                       Lingkar Perut (cm)
                     </label>
                     <input
@@ -342,28 +415,37 @@ function App() {
                       placeholder="Contoh: 80"
                       value={formData.bellyCircumference}
                       onChange={handleChange}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
                     />
                   </div>
 
                   {liveBMI && (
-                    <div className="md:col-span-2 bg-blue-50 border border-blue-200 rounded p-2.5 text-xs text-blue-900 flex items-center justify-between">
-                      <span>Perhitungan IMT Otomatis: <strong>{liveBMI}</strong></span>
-                      <span className="font-semibold">{liveBMICategory.label}</span>
+                    <div className="sm:col-span-2 bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-xs text-slate-700 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-500">Perhitungan IMT:</span>
+                        <strong className="text-slate-900 font-bold">{liveBMI}</strong>
+                      </div>
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-[#00880C] font-semibold border border-emerald-100">
+                        {liveBMICategory.label}
+                      </span>
                     </div>
                   )}
                 </div>
-              </fieldset>
+              </div>
+
+              <hr className="border-slate-100" />
 
               {/* BAGIAN 3: TANDA VITAL */}
-              <fieldset className="border border-gray-200 rounded-md p-4">
-                <legend className="px-2 text-sm font-bold text-gray-800">
-                  3. Tanda Vital (Tekanan Darah)
-                </legend>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  <span className="w-5 h-5 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center text-[11px]">3</span>
+                  <span>Tanda Vital (Tekanan Darah)</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
                   <div>
-                    <label htmlFor="systolic" className="block text-sm font-medium text-gray-700 mb-1">
-                      Sistole (mmHg) <span className="text-red-500">*</span>
+                    <label htmlFor="systolic" className="block text-xs font-semibold text-slate-700 mb-1">
+                      Sistole (mmHg) <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="number"
@@ -373,13 +455,13 @@ function App() {
                       placeholder="Contoh: 110"
                       value={formData.systolic}
                       onChange={handleChange}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
                     />
                   </div>
 
                   <div>
-                    <label htmlFor="diastolic" className="block text-sm font-medium text-gray-700 mb-1">
-                      Diastole (mmHg) <span className="text-red-500">*</span>
+                    <label htmlFor="diastolic" className="block text-xs font-semibold text-slate-700 mb-1">
+                      Diastole (mmHg) <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="number"
@@ -389,148 +471,152 @@ function App() {
                       placeholder="Contoh: 70"
                       value={formData.diastolic}
                       onChange={handleChange}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
                     />
                   </div>
                 </div>
-              </fieldset>
+              </div>
 
-              {/* BAGIAN 4: KELUHAN PASIEN (DENGAN TINGKAT FREKUENSI) */}
-              <fieldset className="border border-gray-200 rounded-md p-4">
-                <legend className="px-2 text-sm font-bold text-gray-800">
-                  4. Keluhan Pasien
-                </legend>
-                <div className="space-y-3 mt-2">
-                  <p className="text-xs text-gray-600">
-                    Centang keluhan yang dialami, lalu tentukan frekuensi kemunculannya (<strong>Sering</strong>, <strong>Jarang</strong>, atau <strong>Tidak Pernah</strong>):
-                  </p>
+              <hr className="border-slate-100" />
 
-                  {/* Opsi: Tidak Ada Keluhan */}
-                  <div className="p-2.5 bg-gray-50 border border-gray-200 rounded">
-                    <label className="flex items-center space-x-2.5 cursor-pointer text-sm font-medium text-gray-800">
-                      <input
-                        type="checkbox"
-                        checked={!hasActiveComplaints}
-                        onChange={(e) => handleSelectNoComplaint(e.target.checked)}
-                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                      />
-                      <span>Tidak Ada Keluhan (Kondisi Sehat / Normal)</span>
-                    </label>
-                  </div>
+              {/* BAGIAN 4: KELUHAN PASIEN */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  <span className="w-5 h-5 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center text-[11px]">4</span>
+                  <span>Keluhan yang Dialami Pasien</span>
+                </div>
 
-                  {/* Daftar Keluhan dengan Pilihan Frekuensi */}
-                  <div className="space-y-2 pt-1">
-                    {COMPLAINT_LIST.map((item) => {
-                      const entry = formData.complaintsMap[item] || { selected: false, frequency: 'Sering' };
-                      return (
-                        <div
-                          key={item}
-                          className={`p-2.5 rounded border transition ${
-                            entry.selected ? 'bg-blue-50/50 border-blue-300' : 'border-gray-200 hover:bg-gray-50'
-                          }`}
-                        >
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                            {/* Checkbox Nama Keluhan */}
-                            <label className="flex items-center space-x-2.5 cursor-pointer text-sm font-medium text-gray-800">
-                              <input
-                                type="checkbox"
-                                checked={entry.selected}
-                                onChange={() => handleToggleComplaint(item)}
-                                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                              />
-                              <span>{item}</span>
-                            </label>
+                <p className="text-[11px] text-slate-500">
+                  Pilih keluhan yang dirasakan, lalu tentukan frekuensi kemunculannya:
+                </p>
 
-                            {/* Opsi Frekuensi (Muncul saat dicentang) */}
-                            {entry.selected && (
-                              <div className="flex items-center space-x-3 pl-6 sm:pl-0 text-xs">
-                                <span className="text-gray-500 font-medium">Frekuensi:</span>
-                                {['Sering', 'Jarang', 'Tidak Pernah'].map((freq) => (
-                                  <label key={freq} className="inline-flex items-center space-x-1 cursor-pointer">
-                                    <input
-                                      type="radio"
-                                      name={`freq-${item}`}
-                                      value={freq}
-                                      checked={entry.frequency === freq}
-                                      onChange={() => handleFrequencyChange(item, freq)}
-                                      className="text-blue-600 focus:ring-blue-500"
-                                    />
-                                    <span className={entry.frequency === freq ? 'font-semibold text-blue-700' : 'text-gray-600'}>
-                                      {freq}
-                                    </span>
-                                  </label>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                {/* Opsi: Tidak Ada Keluhan */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70">
+                  <label className="flex items-center space-x-2.5 cursor-pointer text-xs font-medium text-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={!hasActiveComplaints}
+                      onChange={(e) => handleSelectNoComplaint(e.target.checked)}
+                      className="w-4 h-4 text-[#00880C] rounded border-slate-300 focus:ring-[#00880C]"
+                    />
+                    <span>Tidak Ada Keluhan (Kondisi Segar / Sehat)</span>
+                  </label>
+                </div>
+
+                {/* Daftar Keluhan */}
+                <div className="space-y-2 pt-1">
+                  {COMPLAINT_LIST.map((item) => {
+                    const entry = formData.complaintsMap[item] || { selected: false, frequency: 'Sering' };
+                    return (
+                      <div
+                        key={item}
+                        className={`p-3 rounded-xl border transition ${
+                          entry.selected ? 'bg-emerald-50/40 border-emerald-200' : 'border-slate-200/70 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <label className="flex items-center space-x-2.5 cursor-pointer text-xs font-medium text-slate-800">
+                            <input
+                              type="checkbox"
+                              checked={entry.selected}
+                              onChange={() => handleToggleComplaint(item)}
+                              className="w-4 h-4 text-[#00880C] rounded border-slate-300 focus:ring-[#00880C]"
+                            />
+                            <span>{item}</span>
+                          </label>
+
+                          {entry.selected && (
+                            <div className="flex items-center space-x-3 pl-6 sm:pl-0 text-xs">
+                              <span className="text-slate-400 text-[11px]">Frekuensi:</span>
+                              {['Sering', 'Jarang', 'Tidak Pernah'].map((freq) => (
+                                <label key={freq} className="inline-flex items-center space-x-1 cursor-pointer">
+                                  <input
+                                    type="radio"
+                                    name={`freq-${item}`}
+                                    value={freq}
+                                    checked={entry.frequency === freq}
+                                    onChange={() => handleFrequencyChange(item, freq)}
+                                    className="text-[#00880C] focus:ring-[#00880C]"
+                                  />
+                                  <span className={entry.frequency === freq ? 'font-semibold text-[#00880C]' : 'text-slate-600'}>
+                                    {freq}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      );
-                    })}
-
-                    {/* Keluhan Tambahan / Lainnya */}
-                    <div
-                      className={`p-2.5 rounded border transition ${
-                        formData.hasCustomComplaint ? 'bg-blue-50/50 border-blue-300' : 'border-gray-200 hover:bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <label className="flex items-center space-x-2.5 cursor-pointer text-sm font-medium text-gray-800">
-                          <input
-                            type="checkbox"
-                            checked={formData.hasCustomComplaint}
-                            onChange={(e) => setFormData((prev) => ({ ...prev, hasCustomComplaint: e.target.checked }))}
-                            className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                          />
-                          <span>Keluhan Lainnya...</span>
-                        </label>
-
-                        {formData.hasCustomComplaint && (
-                          <div className="flex items-center space-x-3 pl-6 sm:pl-0 text-xs">
-                            <span className="text-gray-500 font-medium">Frekuensi:</span>
-                            {['Sering', 'Jarang', 'Tidak Pernah'].map((freq) => (
-                              <label key={freq} className="inline-flex items-center space-x-1 cursor-pointer">
-                                <input
-                                  type="radio"
-                                  name="freq-custom"
-                                  value={freq}
-                                  checked={formData.customComplaintFrequency === freq}
-                                  onChange={() => setFormData((prev) => ({ ...prev, customComplaintFrequency: freq }))}
-                                  className="text-blue-600 focus:ring-blue-500"
-                                />
-                                <span className={formData.customComplaintFrequency === freq ? 'font-semibold text-blue-700' : 'text-gray-600'}>
-                                  {freq}
-                                </span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
                       </div>
+                    );
+                  })}
+
+                  {/* Keluhan Kustom / Tambahan */}
+                  <div
+                    className={`p-3 rounded-xl border transition ${
+                      formData.hasCustomComplaint ? 'bg-emerald-50/40 border-emerald-200' : 'border-slate-200/70 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <label className="flex items-center space-x-2.5 cursor-pointer text-xs font-medium text-slate-800">
+                        <input
+                          type="checkbox"
+                          checked={formData.hasCustomComplaint}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, hasCustomComplaint: e.target.checked }))}
+                          className="w-4 h-4 text-[#00880C] rounded border-slate-300 focus:ring-[#00880C]"
+                        />
+                        <span>Keluhan Lainnya...</span>
+                      </label>
 
                       {formData.hasCustomComplaint && (
-                        <div className="mt-2.5 pl-6">
-                          <input
-                            type="text"
-                            placeholder="Sebutkan keluhan pasien lainnya..."
-                            value={formData.customComplaintName}
-                            onChange={(e) => setFormData((prev) => ({ ...prev, customComplaintName: e.target.value }))}
-                            className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-xs focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
-                          />
+                        <div className="flex items-center space-x-3 pl-6 sm:pl-0 text-xs">
+                          <span className="text-slate-400 text-[11px]">Frekuensi:</span>
+                          {['Sering', 'Jarang', 'Tidak Pernah'].map((freq) => (
+                            <label key={freq} className="inline-flex items-center space-x-1 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="freq-custom"
+                                value={freq}
+                                checked={formData.customComplaintFrequency === freq}
+                                onChange={() => setFormData((prev) => ({ ...prev, customComplaintFrequency: freq }))}
+                                className="text-[#00880C] focus:ring-[#00880C]"
+                              />
+                              <span className={formData.customComplaintFrequency === freq ? 'font-semibold text-[#00880C]' : 'text-slate-600'}>
+                                {freq}
+                              </span>
+                            </label>
+                          ))}
                         </div>
                       )}
                     </div>
+
+                    {formData.hasCustomComplaint && (
+                      <div className="mt-2.5 pl-6">
+                        <input
+                          type="text"
+                          placeholder="Sebutkan keluhan pasien lainnya..."
+                          value={formData.customComplaintName}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, customComplaintName: e.target.value }))}
+                          className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-800 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
-              </fieldset>
+              </div>
+
+              <hr className="border-slate-100" />
 
               {/* BAGIAN 5: RIWAYAT OBSTETRI */}
-              <fieldset className="border border-gray-200 rounded-md p-4">
-                <legend className="px-2 text-sm font-bold text-gray-800">
-                  5. Riwayat Obstetri & Paritas
-                </legend>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  <span className="w-5 h-5 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center text-[11px]">5</span>
+                  <span>Riwayat Obstetri & Paritas</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
                   <div>
-                    <label htmlFor="childOrder" className="block text-sm font-medium text-gray-700 mb-1">
-                      Hamil Anak Ke- <span className="text-red-500">*</span>
+                    <label htmlFor="childOrder" className="block text-xs font-semibold text-slate-700 mb-1">
+                      Hamil Anak Ke- <span className="text-rose-500">*</span>
                     </label>
                     <select
                       id="childOrder"
@@ -538,7 +624,7 @@ function App() {
                       required
                       value={formData.childOrder}
                       onChange={handleChange}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 bg-white focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
                     >
                       <option value="1">1 (Anak Pertama / Primigravida)</option>
                       <option value="2">2</option>
@@ -549,8 +635,8 @@ function App() {
                   </div>
 
                   <div>
-                    <label htmlFor="everPregnant" className="block text-sm font-medium text-gray-700 mb-1">
-                      Pernah Hamil Sebelumnya? <span className="text-red-500">*</span>
+                    <label htmlFor="everPregnant" className="block text-xs font-semibold text-slate-700 mb-1">
+                      Pernah Hamil Sebelumnya? <span className="text-rose-500">*</span>
                     </label>
                     <select
                       id="everPregnant"
@@ -558,7 +644,7 @@ function App() {
                       required
                       value={formData.everPregnant}
                       onChange={handleChange}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 bg-white focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
                     >
                       <option value="Tidak">Tidak</option>
                       <option value="Ya">Ya</option>
@@ -566,9 +652,9 @@ function App() {
                   </div>
 
                   {formData.everPregnant === 'Ya' && (
-                    <div className="md:col-span-2">
-                      <label htmlFor="previousPregnancyRisk" className="block text-sm font-medium text-gray-700 mb-1">
-                        Riwayat Kehamilan Sebelumnya <span className="text-red-500">*</span>
+                    <div className="sm:col-span-2">
+                      <label htmlFor="previousPregnancyRisk" className="block text-xs font-semibold text-slate-700 mb-1">
+                        Riwayat Kehamilan Sebelumnya <span className="text-rose-500">*</span>
                       </label>
                       <select
                         id="previousPregnancyRisk"
@@ -576,25 +662,29 @@ function App() {
                         required
                         value={formData.previousPregnancyRisk}
                         onChange={handleChange}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 bg-white focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
                       >
-                        <option value="Risiko rendah">Risiko Rendah / Normal</option>
-                        <option value="Risiko tinggi">Risiko Tinggi / Riwayat Komplikasi</option>
+                        <option value="Risiko rendah">Risiko Rendah / Tanpa Komplikasi</option>
+                        <option value="Risiko tinggi">Risiko Tinggi / Riwayat Komplikasi Persalinan</option>
                       </select>
                     </div>
                   )}
                 </div>
-              </fieldset>
+              </div>
+
+              <hr className="border-slate-100" />
 
               {/* BAGIAN 6: CATATAN KLINIS BIDAN */}
-              <fieldset className="border border-gray-200 rounded-md p-4">
-                <legend className="px-2 text-sm font-bold text-gray-800">
-                  6. Catatan Klinis & Diagnosa
-                </legend>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  <span className="w-5 h-5 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center text-[11px]">6</span>
+                  <span>Catatan Klinis & Diagnosa</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
                   <div>
-                    <label htmlFor="diagnosis" className="block text-sm font-medium text-gray-700 mb-1">
-                      Diagnosa Awal <span className="text-red-500">*</span>
+                    <label htmlFor="diagnosis" className="block text-xs font-semibold text-slate-700 mb-1">
+                      Diagnosa Awal <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -604,47 +694,59 @@ function App() {
                       placeholder="Supervision of normal pregnancy, unspecified"
                       value={formData.diagnosis}
                       onChange={handleChange}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
                     />
                   </div>
 
                   <div>
-                    <label htmlFor="palpation" className="block text-sm font-medium text-gray-700 mb-1">
-                      Palpasi / Catatan Bidan
+                    <label htmlFor="palpation" className="block text-xs font-semibold text-slate-700 mb-1">
+                      Palpasi / Catatan Khusus
                     </label>
                     <input
                       type="text"
                       id="palpation"
                       name="palpation"
-                      placeholder="TFU sesuai usia gestasi, letak kepala..."
+                      placeholder="TFU sesuai gestasi, letak kepala..."
                       value={formData.palpation}
                       onChange={handleChange}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-[#00880C] focus:ring-1 focus:ring-[#00880C] focus:outline-none transition"
                     />
                   </div>
                 </div>
-              </fieldset>
+              </div>
 
-              {/* TOMBOL SUBMIT */}
-              <div className="pt-2">
+              {/* TOMBOL SUBMIT GAYA GOJEK (SIMPEL, RAPIH, JELAS) */}
+              <div className="pt-3">
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-md shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  className="w-full py-3 px-5 rounded-full bg-[#00880C] hover:bg-[#00730A] active:bg-[#006008] text-white font-semibold text-sm transition shadow-sm flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {isSubmitting ? 'Menyimpan Data...' : 'Simpan Data Pasien & Lihat Saran Evaluasi'}
+                  {isSubmitting ? (
+                    <>
+                      <svg className="animate-spin w-4 h-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      <span>Menyimpan & Menganalisis Data...</span>
+                    </>
+                  ) : (
+                    <span>Simpan & Lihat Saran Evaluasi →</span>
+                  )}
                 </button>
-
-                {submitStatus === 'error' && (
-                  <p className="text-xs text-red-600 text-center mt-2">
-                    Gagal mengirim ke spreadsheet. Namun data tetap dapat dievaluasi secara lokal.
-                  </p>
-                )}
               </div>
             </form>
           </div>
         ) : (
-          <ResultScreen evaluationResult={evaluationResult} onReset={handleReset} />
+          <ResultScreen
+            evaluationResult={evaluationResult}
+            refId={refId}
+            syncStatus={syncStatus}
+            syncError={syncError}
+            onReset={handleReset}
+            onRetrySync={handleRetrySync}
+            isRetrying={isRetrying}
+          />
         )}
       </main>
     </div>
