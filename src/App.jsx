@@ -25,9 +25,7 @@ const INITIAL_FORM_STATE = {
   height: '',
   weight: '',
   upperArmCircumference: '',
-  bellyCircumference: '',
-  systolic: '',
-  diastolic: '',
+  bloodPressure: '',
   complaintsMap: COMPLAINT_LIST.reduce((acc, curr) => {
     acc[curr] = { selected: false, frequency: 'Sering' };
     return acc;
@@ -152,8 +150,17 @@ function App() {
       ? activeComplaints.map((c) => `${c.name} (${c.frequency})`).join(', ')
       : 'Tidak Ada Keluhan';
 
+    // Parse tekanan darah (Sistole/Diastole)
+    const bpParts = (formData.bloodPressure || '').split(/[\/\-]/);
+    const systolic = bpParts[0]?.trim() || '';
+    const diastolic = bpParts[1]?.trim() || '';
+    const formattedBP = (systolic && diastolic) ? `${systolic}/${diastolic}` : formData.bloodPressure.trim();
+
     const evaluatedData = {
       ...formData,
+      systolic,
+      diastolic,
+      bloodPressure: formattedBP,
       complaintItems: complaintItems,
       complaint: complaintString,
       bmi: liveBMI,
@@ -195,12 +202,9 @@ function App() {
       diagnosa: evaluatedData.diagnosis,
       tinggi_badan: evaluatedData.height,
       berat_badan: evaluatedData.weight,
-      lingkar_perut: evaluatedData.bellyCircumference,
-      imt: liveBMI ? liveBMI.toString() : '',
-      hasil_imt: liveBMICategory.label,
-      sistole: evaluatedData.systolic,
-      diastole: evaluatedData.diastolic,
-      tekanan_darah: `${evaluatedData.systolic}/${evaluatedData.diastolic}`,
+      tekanan_darah: formattedBP,
+      sistole: systolic,
+      diastole: diastolic,
       lila: evaluatedData.upperArmCircumference,
       anak_ke: evaluatedData.childOrder,
       partum: calculatedPartum,
@@ -359,7 +363,7 @@ function App() {
                   <span>Pemeriksaan Fisik & Antropometri</span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
                   <div>
                     <label htmlFor="height" className="block text-xs font-semibold text-slate-700 mb-1">
                       Tinggi Badan (cm) <span className="text-rose-500">*</span>
@@ -411,24 +415,8 @@ function App() {
                     />
                   </div>
 
-                  <div>
-                    <label htmlFor="bellyCircumference" className="block text-xs font-semibold text-slate-700 mb-1">
-                      Lingkar Perut (cm)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      id="bellyCircumference"
-                      name="bellyCircumference"
-                      placeholder="Contoh: 80"
-                      value={formData.bellyCircumference}
-                      onChange={handleChange}
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none transition"
-                    />
-                  </div>
-
                   {liveBMI && (
-                    <div className="sm:col-span-2 bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-xs text-slate-700 flex items-center justify-between">
+                    <div className="sm:col-span-3 bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-xs text-slate-700 flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="text-slate-500">Perhitungan IMT:</span>
                         <strong className="text-slate-900 font-bold">{liveBMI}</strong>
@@ -450,38 +438,23 @@ function App() {
                   <span>Tanda Vital (Tekanan Darah)</span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
-                  <div>
-                    <label htmlFor="systolic" className="block text-xs font-semibold text-slate-700 mb-1">
-                      Sistole (mmHg) <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      id="systolic"
-                      name="systolic"
-                      required
-                      placeholder="Contoh: 110"
-                      value={formData.systolic}
-                      onChange={handleChange}
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none transition"
-                    />
-                  </div>
-
-                  <div>
-                    <label htmlFor="diastolic" className="block text-xs font-semibold text-slate-700 mb-1">
-                      Diastole (mmHg) <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      id="diastolic"
-                      name="diastolic"
-                      required
-                      placeholder="Contoh: 70"
-                      value={formData.diastolic}
-                      onChange={handleChange}
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none transition"
-                    />
-                  </div>
+                <div className="pt-1">
+                  <label htmlFor="bloodPressure" className="block text-xs font-semibold text-slate-700 mb-1">
+                    Tekanan Darah (mmHg) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="bloodPressure"
+                    name="bloodPressure"
+                    required
+                    placeholder="Contoh: 120/80"
+                    value={formData.bloodPressure}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 focus:outline-none transition"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Format: Sistole/Diastole (misal: 110/70 atau 120/80)
+                  </p>
                 </div>
               </div>
 

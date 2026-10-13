@@ -2,15 +2,16 @@
  * Basis Pengetahuan Sistem Pakar (Rule-Based Forward Chaining)
  * Evaluasi Risiko Kehamilan Berdasarkan Rekomendasi Klinis & Data Log Book Bidan
  *
+ * Klasifikasi Hasil Akhir:
+ * - Risiko Rendah (Score < 2)
+ * - Risiko Tinggi (Score >= 2)
+ *
  * Rules:
  * 1. Usia Ibu (4T: Terlalu Muda < 20 thn atau Terlalu Tua > 35 thn)
  * 2. IMT (Indeks Massa Tubuh: Kurus < 18.5, Lebih 25-29.9, Obesitas >= 30)
  * 3. Tekanan Darah (Hipertensi >=140/90, Prehipertensi, Hipotensi <90/60)
  * 4. LILA (Lingkar Lengan Atas < 23.5 cm -> Kekurangan Energi Kronis / KEK)
- * 5. Keluhan dengan Frekuensi:
- *    - "Sering" / "Ya": Bobot penuh
- *    - "Jarang": Bobot 50%
- *    - "Tidak Pernah": 0
+ * 5. Keluhan dengan Frekuensi (Sering = 100%, Jarang = 50%, Tidak Pernah = 0)
  * 6. Riwayat Kehamilan Berisiko Tinggi (Jika Pernah Hamil = Ya)
  * 7. Paritas / Anak ke-berapa (Grande Multipara > 4, Multipara Tinggi = 4)
  */
@@ -32,6 +33,23 @@ export function getBMICategory(bmi) {
   return { category: 'Obesitas', label: 'OBESITAS (≥ 30.0)' };
 }
 
+/**
+ * Parsing teks tekanan darah seperti "120/80" atau "110 / 70"
+ */
+export function parseBloodPressure(bpString) {
+  if (!bpString || typeof bpString !== 'string') return { systolic: null, diastolic: null };
+  const parts = bpString.split(/[\/\-]/);
+  if (parts.length >= 2) {
+    const sys = parseFloat(parts[0].trim());
+    const dia = parseFloat(parts[1].trim());
+    return {
+      systolic: !isNaN(sys) ? sys : null,
+      diastolic: !isNaN(dia) ? dia : null
+    };
+  }
+  return { systolic: null, diastolic: null };
+}
+
 export function evaluateRisk(formData) {
   let score = 0;
   const tips = [];
@@ -43,8 +61,16 @@ export function evaluateRisk(formData) {
     : null;
 
   const bmi = calculateBMI(formData.height, formData.weight);
-  const systolic = parseFloat(formData.systolic);
-  const diastolic = parseFloat(formData.diastolic);
+
+  // Ambil sistole dan diastole baik dari field terpisah atau string tekanan darah terpadu
+  let systolic = parseFloat(formData.systolic);
+  let diastolic = parseFloat(formData.diastolic);
+  if ((isNaN(systolic) || isNaN(diastolic)) && formData.bloodPressure) {
+    const parsedBP = parseBloodPressure(formData.bloodPressure);
+    if (parsedBP.systolic !== null) systolic = parsedBP.systolic;
+    if (parsedBP.diastolic !== null) diastolic = parsedBP.diastolic;
+  }
+
   const lila = parseFloat(formData.upperArmCircumference);
   const childOrder = formData.childOrder;
 
@@ -105,14 +131,12 @@ export function evaluateRisk(formData) {
   }
 
   // Rule 5: Keluhan dengan Tingkat Frekuensi (Sering, Jarang, Tidak Pernah)
-  // Format complaintItems: [{ name: 'Mual', frequency: 'Sering' | 'Jarang' | 'Tidak Pernah' }]
   const complaintItems = Array.isArray(formData.complaintItems) ? formData.complaintItems : [];
 
   complaintItems.forEach((item) => {
     const { name, frequency } = item;
     if (!frequency || frequency === 'Tidak Pernah') return;
 
-    // Multiplier bobot: Sering = 1 (100%), Jarang = 0.5 (50%)
     const multiplier = frequency === 'Sering' ? 1 : 0.5;
     const freqLabel = frequency === 'Sering' ? 'Sering' : 'Jarang';
 
@@ -145,7 +169,6 @@ export function evaluateRisk(formData) {
       flags.push(`Pusing (${freqLabel})`);
       tips.push(`Pusing (${freqLabel}): Cukupi konsumsi zat besi/tablet tambah darah dan hindari perubahan posisi tubuh secara mendadak.`);
     } else {
-      // Keluhan lainnya
       if (frequency === 'Sering') score += 0.5;
       tips.push(`Keluhan ${name} (${freqLabel}): Konsultasikan perkembangan keluhan ini saat kontrol dengan bidan/dokter.`);
     }
@@ -175,35 +198,31 @@ export function evaluateRisk(formData) {
     clinicalNotes.push('Kehamilan anak pertama: Bekali ibu dengan pengetahuan tanda awal persalinan dan perawatan nifas.');
   }
 
-  // Level Risiko Final (Forward Chaining)
+  // Level Risiko Final (Klasifikasi 2 Level: Rendah vs Tinggi)
   let level = 'rendah';
   let title = '';
   let message = '';
 
-  if (score >= 5) {
-    level = 'sangat_tinggi';
-    title = 'Perhatian Khusus: Risiko Sangat Tinggi';
-    message = 'Ditemukan kombinasi beberapa faktor risiko mayor. Sangat direkomendasikan untuk segera melakukan pemeriksaan dan konsultasi dengan dokter spesialis kebidanan dan kandungan (Sp.OG) di fasilitas kesehatan rujukan.';
-  } else if (score >= 3) {
+  if (score >= 2) {
     level = 'tinggi';
-    title = 'Perlu Perhatian Ekstra (Risiko Tinggi)';
-    message = 'Berdasarkan data pemeriksaan, terdapat beberapa indikator risiko yang perlu perhatian medis khusus. Lakukan pemantauan ANC lebih intensif dan konsultasikan dengan dokter kandungan.';
-  } else if (score >= 1) {
-    level = 'sedang';
-    title = 'Kondisi Perlu Dipantau (Risiko Sedang)';
-    message = 'Terdapat satu atau beberapa faktor yang membutuhkan perhatian khusus. Tetap patuhi jadwal kunjungan ANC, konsumsi vitamin kehamilan secara teratur, dan jaga pola makan bergizi.';
+    title = 'Kondisi Risiko Tinggi';
+    message = 'Berdasarkan data pemeriksaan, terdeteksi indikator risiko yang memerlukan perhatian khusus. Disarankan melakukan pemantauan antenatal care (ANC) lebih intensif dan konsultasi ke fasilitas kesehatan rujukan / dokter spesialis kandungan (Sp.OG).';
   } else {
     level = 'rendah';
-    title = 'Kondisi Relatif Terjaga (Risiko Rendah)';
-    message = 'Data kehamilan Anda menunjukkan kondisi yang baik dan stabil. Teruskan pola hidup sehat, cukupi asupan cairan dan nutrisi, serta nikmati masa kehamilan Anda.';
+    title = 'Kondisi Risiko Rendah';
+    message = 'Data pemeriksaan kehamilan menunjukkan kondisi yang baik dan stabil. Teruskan pola hidup sehat, cukupi asupan nutrisi dan cairan, serta lakukan pemeriksaan kehamilan secara berkala sesuai jadwal.';
     tips.push('Lanjutkan konsumsi tablet tambah darah / vitamin asam folat dan jadwalkan kontrol ANC sesuai usia kandungan.');
   }
 
-  // Siapkan teks ringkasan keluhan
+  // Siapkan teks ringkasan keluhan aktif
   const activeComplaintsText = complaintItems
     .filter(c => c.frequency && c.frequency !== 'Tidak Pernah')
     .map(c => `${c.name} (${c.frequency})`)
     .join(', ');
+
+  const finalBP = (systolic && diastolic)
+    ? `${systolic}/${diastolic} mmHg`
+    : (formData.bloodPressure || '-');
 
   return {
     score: parseFloat(score.toFixed(1)),
@@ -218,9 +237,8 @@ export function evaluateRisk(formData) {
       age: age,
       bmi: bmi,
       bmiCategory: getBMICategory(bmi),
-      bloodPressure: (systolic && diastolic) ? `${systolic}/${diastolic} mmHg` : '-',
+      bloodPressure: finalBP,
       upperArmCircumference: lila ? `${lila} cm` : '-',
-      bellyCircumference: formData.bellyCircumference ? `${formData.bellyCircumference} cm` : '-',
       complaintText: activeComplaintsText || 'Tidak Ada Keluhan',
       everPregnant: formData.everPregnant,
       childOrder: formData.childOrder

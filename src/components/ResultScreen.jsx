@@ -112,7 +112,7 @@ export default function ResultScreen({
     patientData = {}
   } = evaluationResult;
 
-  // Konfigurasi tema visual gaya Gojek Payment Success (Simpel, Terfokus)
+  // Konfigurasi tema visual gaya Gojek Payment Success (2 Level: Rendah & Tinggi)
   const themeConfig = {
     rendah: {
       statusHeading: 'Kondisi Risiko Rendah',
@@ -127,19 +127,6 @@ export default function ResultScreen({
         </svg>
       )
     },
-    sedang: {
-      statusHeading: 'Kondisi Risiko Sedang',
-      badgeBg: 'bg-amber-50 text-amber-800 border-amber-200',
-      badgeLabel: 'Risiko Sedang',
-      heroIconBg: 'bg-amber-500',
-      rippleBg: 'bg-amber-400',
-      heroShadow: 'shadow-amber-500/30',
-      iconSvg: (
-        <svg className="w-12 h-12 text-white animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-        </svg>
-      )
-    },
     tinggi: {
       statusHeading: 'Kondisi Risiko Tinggi',
       badgeBg: 'bg-rose-50 text-rose-800 border-rose-200',
@@ -150,19 +137,6 @@ export default function ResultScreen({
       iconSvg: (
         <svg className="w-12 h-12 text-white animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-        </svg>
-      )
-    },
-    sangat_tinggi: {
-      statusHeading: 'Kondisi Risiko Sangat Tinggi',
-      badgeBg: 'bg-rose-100 text-rose-900 border-rose-300',
-      badgeLabel: 'Risiko Sangat Tinggi',
-      heroIconBg: 'bg-rose-700',
-      rippleBg: 'bg-rose-500',
-      heroShadow: 'shadow-rose-700/30',
-      iconSvg: (
-        <svg className="w-12 h-12 text-white animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M7.86 2h8.28L22 7.86v8.28L16.14 22H7.86L2 16.14V7.86L7.86 2z" />
         </svg>
       )
     }
@@ -476,14 +450,10 @@ Dicatat melalui Form Kehamilan`;
                   <span className="font-semibold text-slate-800">{patientData.patientId || '-'}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">Lingkar Perut:</span>
-                  <span className="font-semibold text-slate-800">{patientData.bellyCircumference || '-'}</span>
-                </div>
-                <div>
                   <span className="text-slate-400 block text-[11px]">Riwayat Hamil:</span>
                   <span className="font-semibold text-slate-800">{patientData.everPregnant || '-'}</span>
                 </div>
-                <div className="col-span-2 sm:col-span-3 pt-2 border-t border-slate-100">
+                <div className="col-span-2 pt-2 border-t border-slate-100">
                   <span className="text-slate-400 block text-[11px]">Keluhan Lengkap:</span>
                   <span className="font-medium text-slate-800">{patientData.complaintText || 'Tidak ada keluhan'}</span>
                 </div>
